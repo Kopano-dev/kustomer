@@ -27,7 +27,7 @@ linters-settings:
   lll:
     line-length: 140
   goimports:
-    local-prefixes: stash.kopano.io/kgol/kweb
+    local-prefixes: stash.kopano.io/kgol/kustomer
   gocritic:
     enabled-tags:
       - performance
