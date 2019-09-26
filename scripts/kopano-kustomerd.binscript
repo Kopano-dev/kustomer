@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# Kopano Customer daemon (kustomerd) launcher
+#
+# License: AGPL-3.0-only
+# Copyright 2019 Kopano and its licensors
+#
+
+set -e
+
+# Base defines.
+
+EXE=/usr/libexec/kopano/kustomerd
+
+setup_env() {
+	true
+}
+
+# Handle parameters for configuration.
+
+case "${1}" in
+	serve)
+		# Inject values from environment into command line. This is mainly used
+		# when this script is run from systemd or docker.
+
+		# kustomderd basics
+
+		# Initialize environment.
+		setup_env
+
+		;;
+
+	*)
+		;;
+esac
+
+# Set executable.
+
+set -- ${EXE} "$@"
+
+# Run.
+
+exec "$@"
