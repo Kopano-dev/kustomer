@@ -9,11 +9,44 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
 
 	"stash.kopano.io/kgol/kustomer/server"
 )
+
+const defaultURL = "https://kustomer.kopano.com/api/stats/v1/submit"
+
+var globalSub = ""
+
+func init() {
+	autosurvey.AutoHashGUID = ""
+	autosurvey.DefaultConfig = autosurvey.DefaultConfig.Clone()
+
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_URL"); v != "" {
+		autosurvey.DefaultConfig.URL = v
+	} else {
+		autosurvey.DefaultConfig.URL = defaultURL
+	}
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_START_DELAY"); v != "" {
+		autosurvey.DefaultConfig.StartDelay, _ = strconv.ParseUint(v, 10, 64)
+	}
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_ERROR_DELAY"); v != "" {
+		autosurvey.DefaultConfig.ErrorDelay, _ = strconv.ParseUint(v, 10, 64)
+	}
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_INTERVAL"); v != "" {
+		autosurvey.DefaultConfig.Interval, _ = strconv.ParseUint(v, 10, 64)
+	}
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_INSECURE"); v != "" {
+		autosurvey.DefaultConfig.Insecure = v == "yes"
+	}
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_SUB"); v != "" {
+		globalSub = strings.TrimSpace(v)
+	}
+}
 
 func commandServe() *cobra.Command {
 	serveCmd := &cobra.Command{
@@ -43,9 +76,11 @@ func serve(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %v", err)
 	}
-	logger.Infoln("serve start")
+	logger.Debugln("serve start")
 
 	cfg := &server.Config{
+		Subject: globalSub,
+
 		Logger: logger,
 	}
 

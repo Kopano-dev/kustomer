@@ -7,21 +7,29 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
+	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
+
+	"stash.kopano.io/kgol/kustomer/version"
 )
 
 // Server is our HTTP server implementation.
 type Server struct {
+	subject string
+
 	logger logrus.FieldLogger
 }
 
 // NewServer constructs a server from the provided parameters.
 func NewServer(c *Config) (*Server, error) {
 	s := &Server{
+		subject: c.Subject,
+
 		logger: c.Logger,
 	}
 
@@ -40,8 +48,29 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	errCh := make(chan error, 2)
 	signalCh := make(chan os.Signal, 1)
+	subCh := make(chan string, 1)
 
-	logger.Infoln("ready")
+	// Retporting via survey client.
+	go func() {
+		sub := <-subCh
+		close(subCh)
+		logger.WithField("sub", sub).Infof("starting")
+		err = autosurvey.Start(ctx, "kustomerd", version.Version, []byte(sub))
+		if err != nil {
+			errCh <- fmt.Errorf("failed to start client: %v", err)
+		}
+	}()
+
+	// TODO(longsleep): Load and parse license files here.
+
+	logger.Debugln("ready")
+
+	// Find sub.
+	if s.subject != "" {
+		subCh <- s.subject
+	} else {
+		logger.Infoln("no customer information available, standing by")
+	}
 
 	// Wait for exit or error.
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
