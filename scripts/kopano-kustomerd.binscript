@@ -13,7 +13,9 @@ set -e
 EXE=/usr/libexec/kopano/kustomerd
 
 setup_env() {
-	true
+	if [ -n "$subject" ]; then
+		export KOPANO_CUSTOMERCLIENT_SUB="$subject"
+	fi
 }
 
 # Handle parameters for configuration.
@@ -24,6 +26,10 @@ case "${1}" in
 		# when this script is run from systemd or docker.
 
 		# kustomderd basics
+
+		if [ -n "$log_level" ]; then
+			set -- "$@" --log-level="$log_level"
+		fi
 
 		# Initialize environment.
 		setup_env

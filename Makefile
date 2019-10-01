@@ -133,6 +133,7 @@ dist: 3rdparty-LICENSES.md ; $(info building dist tarball ...)
 	cp -avf ../bin/* "${PACKAGE_NAME}-${VERSION}" && \
 	cp -avf ../scripts/kopano-kustomerd.binscript "${PACKAGE_NAME}-${VERSION}/scripts" && \
 	cp -avf ../scripts/kopano-kustomerd.service "${PACKAGE_NAME}-${VERSION}/scripts" && \
+	cp -avf ../scripts/kustomerd.cfg "${PACKAGE_NAME}-${VERSION}/scripts" && \
 	tar --owner=0 --group=0 -czvf ${PACKAGE_NAME}-${VERSION}.tar.gz "${PACKAGE_NAME}-${VERSION}" && \
 	cd ..
 
