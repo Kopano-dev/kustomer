@@ -20,7 +20,7 @@ import (
 
 // Server is our HTTP server implementation.
 type Server struct {
-	subject string
+	email string
 
 	logger logrus.FieldLogger
 }
@@ -28,7 +28,7 @@ type Server struct {
 // NewServer constructs a server from the provided parameters.
 func NewServer(c *Config) (*Server, error) {
 	s := &Server{
-		subject: c.Subject,
+		email: c.Email,
 
 		logger: c.Logger,
 	}
@@ -48,14 +48,13 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	errCh := make(chan error, 2)
 	signalCh := make(chan os.Signal, 1)
-	subCh := make(chan string, 1)
+	startCh := make(chan string)
 
 	// Retporting via survey client.
 	go func() {
-		sub := <-subCh
-		close(subCh)
-		logger.WithField("sub", sub).Infof("starting")
-		err = autosurvey.Start(ctx, "kustomerd", version.Version, []byte(sub))
+		<-startCh
+		logger.WithField("email", s.email).Infof("starting")
+		err = autosurvey.Start(ctx, "kustomerd", version.Version, []byte(s.email))
 		if err != nil {
 			errCh <- fmt.Errorf("failed to start client: %v", err)
 		}
@@ -65,9 +64,9 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	logger.Debugln("ready")
 
-	// Find sub.
-	if s.subject != "" {
-		subCh <- s.subject
+	// Find email.
+	if s.email != "" {
+		close(startCh)
 	} else {
 		logger.Infoln("no customer information available, standing by")
 	}

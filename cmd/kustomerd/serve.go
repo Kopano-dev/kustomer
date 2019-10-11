@@ -20,7 +20,8 @@ import (
 
 const defaultURL = "https://kustomer.kopano.com/api/stats/v1/submit"
 
-var globalSub = ""
+var globalEmail = ""
+var licensesPath = "/etc/kopano/licenses"
 
 func init() {
 	autosurvey.AutoHashGUID = ""
@@ -43,8 +44,8 @@ func init() {
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_INSECURE"); v != "" {
 		autosurvey.DefaultConfig.Insecure = v == "yes"
 	}
-	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_SUB"); v != "" {
-		globalSub = strings.TrimSpace(v)
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_EMAIL"); v != "" {
+		globalEmail = strings.TrimSpace(v)
 	}
 }
 
@@ -62,6 +63,7 @@ func commandServe() *cobra.Command {
 
 	serveCmd.Flags().Bool("log-timestamp", true, "Prefix each log line with timestamp")
 	serveCmd.Flags().String("log-level", "info", "Log level (one of panic, fatal, error, warn, info or debug)")
+	serveCmd.Flags().String("licenses-path", licensesPath, "Path to the folder containing Kopano license files")
 
 	return serveCmd
 }
@@ -79,7 +81,7 @@ func serve(cmd *cobra.Command, args []string) error {
 	logger.Debugln("serve start")
 
 	cfg := &server.Config{
-		Subject: globalSub,
+		Email: globalEmail,
 
 		Logger: logger,
 	}

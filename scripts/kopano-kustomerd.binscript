@@ -11,12 +11,7 @@ set -e
 # Base defines.
 
 EXE=/usr/libexec/kopano/kustomerd
-
-setup_env() {
-	if [ -n "$subject" ]; then
-		export KOPANO_CUSTOMERCLIENT_SUB="$subject"
-	fi
-}
+DEFAULT_LICENSES_PATH=/etc/kopano/licenses
 
 # Handle parameters for configuration.
 
@@ -31,8 +26,17 @@ case "${1}" in
 			set -- "$@" --log-level="$log_level"
 		fi
 
-		# Initialize environment.
-		setup_env
+		if [ -z "$licenses_path "]; then
+			licenses_path="${DEFAULT_LICENSES_PATH}"
+		fi
+
+		if [ -n "$licenses_path" ]; then
+			set -- "$@" --licenses-path="$licenses_path"
+		fi
+
+		if [ -n "$email" ]; then
+			export KOPANO_CUSTOMERCLIENT_EMAIL="$email"
+		fi
 
 		;;
 
