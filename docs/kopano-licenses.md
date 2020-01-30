@@ -78,7 +78,7 @@ And in its plain form (JOSE header and claims set):
 | typ  (header)  | JWT    | License type, always JWT
 | alg  (header)  | ES256  | JSON Web Algorithm (JWA)
 | iss            | kopano | Issuer identifier
-| sub            |        | Customer ID
+| sub            |        | Customer ID or customer email
 | exp            |        | Expiration time
 | nbf            |        | Not before time
 | iat            |        | Issued at time
@@ -89,6 +89,8 @@ And in its plain form (JOSE header and claims set):
 
 The license data is found in the `k` claim and contains the following fields.
 
+| Key            | Value  | Description
+| -------------- | ------ | ---------------------------------------------
 | v              | 0      | Kopano license data version
 | products       |        | Kopano licensed product data mapping
 
@@ -97,5 +99,7 @@ The license data is found in the `k` claim and contains the following fields.
 The `products` key contains a mapping where the keys identify the licensed Kopano
 product and the individual values are specific to that particular product.
 
+| Key            | Value  | Description
+| -------------- | ------ | ---------------------------------------------
 | lid            |        | Unique Kopano license ID
 | ...            |        | All other fields are specific to the product
