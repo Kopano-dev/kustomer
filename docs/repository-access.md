@@ -38,8 +38,53 @@ at https://manpages.debian.org/testing/apt/apt_auth.conf.5.en.html or
 
 ## Docker
 
-TODO
+To login into docker you need your groupware or meet license.
+
+```
+docker login registry.kopano.com
+Username: customer
+Password: ${license}
+```
 
 ## Kubernetes
 
-TODO
+First create a docker-registry secret
+
+```
+kubectl create secret docker-registry kopanoregistry \
+  --docker-server=registry.kopano.com \
+  --docker-username=customer  \
+  --docker-password=${license} \
+```
+
+in the deployment file you need to add
+```
+ imagePullSecrets:
+      - name: kopanoregistry
+```
+
+Example
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kopano-core
+  labels:
+    name: kopano-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: kopano-core
+  template:
+    metadata:
+      labels:
+        name: kopano-core
+    spec:-
+      containers:
+       - name:  kopano-core
+         image: registry.kopano.com/kopano
+         imagePullPolicy: "Always"
+      imagePullSecrets:
+       - name: kopanoregistry
+```
