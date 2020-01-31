@@ -62,7 +62,7 @@ And in its plain form (JOSE header and claims set):
     "v": 0,
     "products": {
       "kwmserver": {
-		"lid": "50220dde-ca4d-428c-8bc1-c987c8210869",
+        "lid": "50220dde-ca4d-428c-8bc1-c987c8210869",
         "users": 50,
         "groups": 10
       }
