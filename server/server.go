@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
@@ -21,7 +23,8 @@ import (
 
 // Server is our HTTP server implementation.
 type Server struct {
-	sub string
+	sub         string
+	licensePath string
 
 	logger logrus.FieldLogger
 }
@@ -40,6 +43,15 @@ func NewServer(c *Config) (*Server, error) {
 		}
 	}
 
+	if c.LicensesPath != "" {
+		// Validate license path
+		licensePath, absErr := filepath.Abs(c.LicensesPath)
+		if absErr != nil {
+			return nil, fmt.Errorf("invalid license path: %w", absErr)
+		}
+		s.licensePath = licensePath
+	}
+
 	return s, nil
 }
 
@@ -48,35 +60,80 @@ func NewServer(c *Config) (*Server, error) {
 func (s *Server) Serve(ctx context.Context) error {
 	var err error
 
-	_, serveCtxCancel := context.WithCancel(ctx)
+	serveCtx, serveCtxCancel := context.WithCancel(ctx)
 	defer serveCtxCancel()
 
 	logger := s.logger
 
 	errCh := make(chan error, 2)
 	signalCh := make(chan os.Signal, 1)
-	startCh := make(chan string)
+	startCh := make(chan string, 1)
 
-	// Retporting via survey client.
+	// Reporting via survey client.
 	go func() {
-		<-startCh
-		logger.WithField("sub", s.sub).Infof("starting")
-		err = autosurvey.Start(ctx, "kustomerd", version.Version, []byte(s.sub))
-		if err != nil {
-			errCh <- fmt.Errorf("failed to start client: %v", err)
+		var cancel context.CancelFunc
+		for {
+			select {
+			case <-serveCtx.Done():
+				if cancel != nil {
+					cancel()
+				}
+				return
+			case sub := <-startCh:
+				if cancel != nil {
+					if sub == "" {
+						logger.Infof("deactivating")
+					}
+					cancel()
+				}
+				if sub != "" {
+					logger.WithField("sub", sub).Infof("activating")
+					surveyCtx, survecCtxCancel := context.WithCancel(serveCtx)
+					cancel = survecCtxCancel
+					err = autosurvey.Start(surveyCtx, "kustomerd", version.Version, []byte(sub))
+					if err != nil {
+						errCh <- fmt.Errorf("failed to start client: %v", err)
+					}
+				} else {
+					logger.Infoln("no customer information available, standing by")
+				}
+			}
 		}
 	}()
 
-	// TODO(longsleep): Load and parse license files here.
+	// License loading / watching.
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		var sub string
+		var first bool
+		f := func() {
+			// TODO(longsleep): Load and parse license files here.
+			// Find sub.
+			if !first && s.sub == sub {
+				return
+			}
+			sub = s.sub
+			first = false
+			startCh <- s.sub
+		}
+		select {
+		case <-serveCtx.Done():
+			return
+		default:
+			f()
+		}
+		for {
+			select {
+			case <-serveCtx.Done():
+				return
+			case <-ticker.C:
+				f()
+			}
+		}
+
+	}()
 
 	logger.Debugln("ready")
-
-	// Find sub.
-	if s.sub != "" {
-		close(startCh)
-	} else {
-		logger.Infoln("no customer information available, standing by")
-	}
 
 	// Wait for exit or error.
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
@@ -87,6 +144,8 @@ func (s *Server) Serve(ctx context.Context) error {
 		logger.WithField("signal", reason).Warnln("received signal")
 		// breaks
 	}
+
+	logger.Infoln("clean server shutdown")
 
 	// Cancel our own context,
 	serveCtxCancel()

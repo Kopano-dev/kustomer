@@ -83,7 +83,8 @@ func serve(cmd *cobra.Command, args []string) error {
 	logger.Debugln("serve start")
 
 	cfg := &server.Config{
-		Sub: globalSub,
+		Sub:          globalSub,
+		LicensesPath: licensesPath,
 
 		Logger: logger,
 	}
