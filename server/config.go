@@ -11,7 +11,7 @@ import (
 
 // Config bundles configuration settings.
 type Config struct {
-	Email string
+	Sub string
 
 	Logger logrus.FieldLogger
 }

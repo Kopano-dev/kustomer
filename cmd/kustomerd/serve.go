@@ -20,13 +20,15 @@ import (
 
 const defaultURL = "https://kustomer.kopano.com/api/stats/v1/submit"
 
-var globalEmail = ""
+var globalSub = ""
 var licensesPath = "/etc/kopano/licenses"
 
 func init() {
+	// Disable auto hashing of GUID values. We control this ourselves.
 	autosurvey.AutoHashGUID = ""
-	autosurvey.DefaultConfig = autosurvey.DefaultConfig.Clone()
 
+	// Setup survey client for kustomer endpoints.
+	autosurvey.DefaultConfig = autosurvey.DefaultConfig.Clone()
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_URL"); v != "" {
 		autosurvey.DefaultConfig.URL = v
 	} else {
@@ -44,8 +46,8 @@ func init() {
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_INSECURE"); v != "" {
 		autosurvey.DefaultConfig.Insecure = v == "yes"
 	}
-	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_EMAIL"); v != "" {
-		globalEmail = strings.TrimSpace(v)
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_SUB"); v != "" {
+		globalSub = strings.TrimSpace(v)
 	}
 }
 
@@ -81,7 +83,7 @@ func serve(cmd *cobra.Command, args []string) error {
 	logger.Debugln("serve start")
 
 	cfg := &server.Config{
-		Email: globalEmail,
+		Sub: globalSub,
 
 		Logger: logger,
 	}

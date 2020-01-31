@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
@@ -20,7 +21,7 @@ import (
 
 // Server is our HTTP server implementation.
 type Server struct {
-	email string
+	sub string
 
 	logger logrus.FieldLogger
 }
@@ -28,9 +29,15 @@ type Server struct {
 // NewServer constructs a server from the provided parameters.
 func NewServer(c *Config) (*Server, error) {
 	s := &Server{
-		email: c.Email,
-
 		logger: c.Logger,
+	}
+
+	if c.Sub != "" {
+		// Check if provided sub is email.
+		s.sub = strings.TrimSpace(c.Sub)
+		if isValidEmail(s.sub) {
+			s.sub = hashSub(s.sub)
+		}
 	}
 
 	return s, nil
@@ -53,8 +60,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	// Retporting via survey client.
 	go func() {
 		<-startCh
-		logger.WithField("email", s.email).Infof("starting")
-		err = autosurvey.Start(ctx, "kustomerd", version.Version, []byte(s.email))
+		logger.WithField("sub", s.sub).Infof("starting")
+		err = autosurvey.Start(ctx, "kustomerd", version.Version, []byte(s.sub))
 		if err != nil {
 			errCh <- fmt.Errorf("failed to start client: %v", err)
 		}
@@ -64,8 +71,8 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	logger.Debugln("ready")
 
-	// Find email.
-	if s.email != "" {
+	// Find sub.
+	if s.sub != "" {
 		close(startCh)
 	} else {
 		logger.Infoln("no customer information available, standing by")
