@@ -18,7 +18,8 @@ import (
 	"stash.kopano.io/kgol/kustomer/server"
 )
 
-const defaultURL = "https://kustomer.kopano.com/api/stats/v1/submit"
+var defaultSubmitURL = "https://kustomer.kopano.com/api/stats/v1/submit"
+var defaultJWKSURI = "https://kustomer.kopano.com/api/stats/v1/jwks.json"
 
 var globalSub = ""
 var licensesPath = "/etc/kopano/licenses"
@@ -30,9 +31,11 @@ func init() {
 	// Setup survey client for kustomer endpoints.
 	autosurvey.DefaultConfig = autosurvey.DefaultConfig.Clone()
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_URL"); v != "" {
-		autosurvey.DefaultConfig.URL = v
-	} else {
-		autosurvey.DefaultConfig.URL = defaultURL
+		defaultSubmitURL = v
+	}
+	autosurvey.DefaultConfig.URL = defaultSubmitURL
+	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_JWKS"); v != "" {
+		defaultJWKSURI = v
 	}
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_START_DELAY"); v != "" {
 		autosurvey.DefaultConfig.StartDelay, _ = strconv.ParseUint(v, 10, 64)
@@ -65,7 +68,7 @@ func commandServe() *cobra.Command {
 
 	serveCmd.Flags().Bool("log-timestamp", true, "Prefix each log line with timestamp")
 	serveCmd.Flags().String("log-level", "info", "Log level (one of panic, fatal, error, warn, info or debug)")
-	serveCmd.Flags().String("licenses-path", licensesPath, "Path to the folder containing Kopano license files")
+	serveCmd.Flags().StringVar(&licensesPath, "licenses-path", licensesPath, "Path to the folder containing Kopano license files")
 
 	return serveCmd
 }
@@ -85,6 +88,7 @@ func serve(cmd *cobra.Command, args []string) error {
 	cfg := &server.Config{
 		Sub:          globalSub,
 		LicensesPath: licensesPath,
+		JWKURI:       defaultJWKSURI,
 
 		Logger: logger,
 	}

@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Sub          string
 	LicensesPath string
+	JWKURI       string
 
 	Logger logrus.FieldLogger
 }
