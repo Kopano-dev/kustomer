@@ -39,35 +39,38 @@ https://tools.ietf.org/html/rfc7519.
 ### Example JWT license
 
 ```
-eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJrb3Bhbm8iLCJleHAiOjE1NzA4MjUyOTIsImlhdCI6MTU2ODIzMzI5Miwic3ViIjoicGF3ZWxkZWJpa0BnbWFpbC5jb20iLCJrIjp7InYiOjAsInByb2R1Y3RzIjp7Imt3bXNlcnZlciI6eyJ1c2VycyI6NTAsImdyb3VwcyI6MTB9fX19.kfwFR593Jxi7Nk2uNGBRvbvaW0rNcI_Beud6ozFwyNceqQuX79ecgmskxK-w-YaHqHL6LFEtt8GwVvA2GD015g
+eyJhbGciOiJFZERTQSIsImtpZCI6InNpbW9uLXRlc3QtbGljZW5zZS1zaWduaW5nLWNhLTEtMjAyMCIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJrb3Bhbm8iLCJleHAiOjE2MjU1Mjk2MDAsImlhdCI6MTU5Mzk5MzYwMCwiaXNzIjoia29wYW5vIiwianRpIjoiODRkMWI4NjI2M2Q4YWIyMGU3ZWY5OTIzYTliYzFlMjQxMWJlMDUwMmJkMDBmMzQ5OWM4MjlmZDkzY2Y4YmE3YSIsImsiOnsicHJvZHVjdHMiOnsia3dtc2VydmVyIjp7Imdyb3VwcyI6MTAsImxpZCI6ImUzNDc0MjQ1LTNhYzQtNGJkYy04ZDQwLTQ3ZmRlYWM2M2QwOCIsInVzZXJzIjo1MH19LCJ2IjowfSwibmJmIjoxNTkzOTkzNjAwLCJzdWIiOiI4YWM0MThiMC1kM2YyLTQ4YzYtYTQyNi1jZGMzNmQyZjQ2YWIiLCJ1aWQiOiIyMTQ4M2FjOC1jMDc0LTQ1ZmYtODYyOC1mYmUxNGFmYTg4NmQifQ.ftWUUH27yKnFBtIvcHUxXgI7OPD90Gkv2YEkOqmuAdStPDV4m7IsUkOjvWPvk5x4sZ47W8xqRe8BFN3yLsSXDA
 ```
 
 And in its plain form (JOSE header and claims set):
 
 ```
 {
-  "typ": "JWT",
-  "alg": "ES256",
-  "kid": "kopano-license-201910-1"
+  "alg": "EdDSA",
+  "kid": "test-license-signing-ca-1-2020",
+  "typ": "JWT"
 }
 ```
 ```
 {
+  "aud": "kopano",
+  "exp": 1625529600,
+  "iat": 1593993600,
   "iss": "kopano",
-  "exp": 1570825292,
-  "iat": 1568233292,
-  "sub": "8ac418b0-d3f2-48c6-a426-cdc36d2f46ab",
-  "uid": "26b55267-894e-4deb-bcf3-057f229780f0",
+  "jti": "84d1b86263d8ab20e7ef9923a9bc1e2411be0502bd00f3499c829fd93cf8ba7a",
   "k": {
-    "v": 0,
     "products": {
       "kwmserver": {
-        "lid": "50220dde-ca4d-428c-8bc1-c987c8210869",
-        "users": 50,
-        "groups": 10
+        "groups": 10,
+        "lid": "e3474245-3ac4-4bdc-8d40-47fdeac63d08",
+        "users": 50
       }
-    }
-  }
+    },
+    "v": 0
+  },
+  "nbf": 1593993600,
+  "sub": "8ac418b0-d3f2-48c6-a426-cdc36d2f46ab",
+  "uid": "21483ac8-c074-45ff-8628-fbe14afa886d"
 }
 ```
 
@@ -77,11 +80,13 @@ And in its plain form (JOSE header and claims set):
 | -------------- | ------ | -----------------------------------
 | typ  (header)  | JWT    | License type, always JWT
 | alg  (header)  | ES256  | JSON Web Algorithm (JWA)
-| iss            | kopano | Issuer identifier
+| iss            | kopano | Issuer identifier (must be kopano)
+| aud            | kopano | Audience (must be kopano)
 | sub            |        | Customer ID or customer email
 | exp            |        | Expiration time
 | nbf            |        | Not before time
 | iat            |        | Issued at time
+| jti            |        | Unique ID for this license file
 | uid            |        | Unique Kopano license file ID
 | k              |        | Kopano license data mapping
 

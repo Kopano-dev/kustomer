@@ -12,6 +12,7 @@ set -e
 
 EXE=/usr/libexec/kopano/kustomerd
 DEFAULT_LICENSES_PATH=/etc/kopano/licenses
+DEFAULT_LISTEN_PATH=/run/kopano-kustomerd/api.sock
 
 # Handle parameters for configuration.
 
@@ -26,12 +27,20 @@ case "${1}" in
 			set -- "$@" --log-level="$log_level"
 		fi
 
-		if [ -z "$licenses_path "]; then
+		if [ -z "$licenses_path" ]; then
 			licenses_path="${DEFAULT_LICENSES_PATH}"
 		fi
 
 		if [ -n "$licenses_path" ]; then
 			set -- "$@" --licenses-path="$licenses_path"
+		fi
+
+		if [ -z "$listen_path" ]; then
+			listen_path="${DEFAULT_LISTEN_PATH}"
+		fi
+
+		if [ -n "$listen_path" ]; then
+			set -- "$@" --listen-path="$listen_path"
 		fi
 
 		if [ -n "$email" ]; then

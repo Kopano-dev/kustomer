@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/square/go-jose.v2/jwt"
 	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
@@ -37,6 +40,7 @@ type Server struct {
 
 	logger      logrus.FieldLogger
 	licensePath string
+	listenPath  string
 	sub         string
 }
 
@@ -63,8 +67,24 @@ func NewServer(c *Config) (*Server, error) {
 		}
 		s.licensePath = licensePath
 	}
+	if c.ListenPath != "" {
+		// Validate listen path
+		listenPath, absErr := filepath.Abs(c.ListenPath)
+		if absErr != nil {
+			return nil, fmt.Errorf("invalid listen path: %w", absErr)
+		}
+		s.listenPath = listenPath
+	}
 
 	return s, nil
+}
+
+// AddRoutes add the associated Servers URL routes to the provided router with
+// the provided context.Context.
+func (s *Server) AddRoutes(ctx context.Context, router *mux.Router) {
+	// TODO(longsleep): Add subpath support to all handlers and paths.
+	router.HandleFunc("/health-check", s.HealthCheckHandler)
+	router.HandleFunc("/api/v1/claims-gen", s.ClaimsGenHandler)
 }
 
 // Serve starts all the accociated servers resources and listeners and blocks
@@ -78,8 +98,33 @@ func (s *Server) Serve(ctx context.Context) error {
 	logger := s.logger
 
 	errCh := make(chan error, 2)
+	exitCh := make(chan bool, 1)
 	signalCh := make(chan os.Signal, 1)
 	startCh := make(chan []*license.Claims, 1)
+
+	router := mux.NewRouter()
+	s.AddRoutes(serveCtx, router)
+
+	srv := &http.Server{
+		Handler: router,
+	}
+
+	logger.WithField("socket", s.listenPath).Infoln("starting http listener")
+	listener, err := net.Listen("unix", s.listenPath)
+	if err != nil {
+		return err
+	}
+
+	// HTTP listener.
+	go func() {
+		serveErr := srv.Serve(listener)
+		if serveErr != nil {
+			errCh <- serveErr
+		}
+
+		logger.Debugln("http listener stopped")
+		close(exitCh)
+	}()
 
 	// Reporting via survey client.
 	go func() {
@@ -224,7 +269,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	}()
 
-	logger.Debugln("ready")
+	logger.Infoln("ready")
 
 	// Wait for exit or error.
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
@@ -236,10 +281,33 @@ func (s *Server) Serve(ctx context.Context) error {
 		// breaks
 	}
 
-	logger.Infoln("clean server shutdown")
+	// Shutdown, server will stop to accept new connections, requires Go 1.8+.
+	logger.Infoln("clean server shutdown start")
+	shutDownCtx, shutDownCtxCancel := context.WithTimeout(ctx, 10*time.Second)
+	if shutdownErr := srv.Shutdown(shutDownCtx); shutdownErr != nil {
+		logger.WithError(shutdownErr).Warn("clean server shutdown failed")
+	}
 
 	// Cancel our own context,
 	serveCtxCancel()
+	func() {
+		for {
+			select {
+			case <-exitCh:
+				return
+			default:
+				// HTTP listener has not quit yet.
+				logger.Info("waiting for http listener to exit")
+			}
+			select {
+			case reason := <-signalCh:
+				logger.WithField("signal", reason).Warn("received signal")
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}()
+	shutDownCtxCancel() // prevent leak.
 
 	return err
 }

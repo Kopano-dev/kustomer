@@ -11,9 +11,12 @@ import (
 
 // Config bundles configuration settings.
 type Config struct {
-	Sub          string
+	Sub string
+
 	LicensesPath string
-	JWKURI       string
+	ListenPath   string
+
+	JWKURI string
 
 	Logger logrus.FieldLogger
 }

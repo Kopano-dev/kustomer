@@ -23,6 +23,7 @@ var defaultJWKSURI = "https://kustomer.kopano.com/api/stats/v1/jwks.json"
 
 var globalSub = ""
 var licensesPath = "/etc/kopano/licenses"
+var listenPath = "/run/kopano-kustomerd/api.sock"
 
 func init() {
 	// Disable auto hashing of GUID values. We control this ourselves.
@@ -69,6 +70,7 @@ func commandServe() *cobra.Command {
 	serveCmd.Flags().Bool("log-timestamp", true, "Prefix each log line with timestamp")
 	serveCmd.Flags().String("log-level", "info", "Log level (one of panic, fatal, error, warn, info or debug)")
 	serveCmd.Flags().StringVar(&licensesPath, "licenses-path", licensesPath, "Path to the folder containing Kopano license files")
+	serveCmd.Flags().StringVar(&listenPath, "listen-path", listenPath, "Path to unix socket for API requests")
 
 	return serveCmd
 }
@@ -86,9 +88,12 @@ func serve(cmd *cobra.Command, args []string) error {
 	logger.Debugln("serve start")
 
 	cfg := &server.Config{
-		Sub:          globalSub,
+		Sub: globalSub,
+
 		LicensesPath: licensesPath,
-		JWKURI:       defaultJWKSURI,
+		ListenPath:   listenPath,
+
+		JWKURI: defaultJWKSURI,
 
 		Logger: logger,
 	}
