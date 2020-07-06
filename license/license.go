@@ -52,6 +52,8 @@ type Claims struct {
 	*jwt.Claims
 
 	LicenseFileName string `json:"-"`
-	LicenseFileID   string `json:"uid"`
-	Kopano          Kopano `json:"k"`
+	LicenseID       string `json:"-"`
+
+	LicenseFileID string `json:"uid"`
+	Kopano        Kopano `json:"k"`
 }

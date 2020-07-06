@@ -129,6 +129,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	// Reporting via survey client.
 	go func() {
 		var cancel context.CancelFunc
+		var collector *Collector
 		for {
 			select {
 			case <-serveCtx.Done():
@@ -137,24 +138,25 @@ func (s *Server) Serve(ctx context.Context) error {
 				}
 				return
 			case claims := <-startCh:
-				if cancel != nil {
-					if len(claims) == 0 {
-						logger.Infof("deactivating")
-					}
-					cancel()
-				}
-				if len(claims) > 0 {
-					sub := claims[0].Claims.Subject
-					logger.WithField("sub", sub).Infof("activating")
-					surveyCtx, survecCtxCancel := context.WithCancel(serveCtx)
-					cancel = survecCtxCancel
-					collector, _ := NewCollector(s.config, claims)
-					err = autosurvey.Start(surveyCtx, "kustomerd", version.Version, []byte(sub), collector)
-					if err != nil {
-						errCh <- fmt.Errorf("failed to start client: %v", err)
-					}
+				if collector != nil {
+					collector.setClaims(claims)
 				} else {
-					logger.Infoln("no customer information available, standing by")
+					if len(claims) > 0 {
+						sub := claims[0].Claims.Subject
+						logger.WithFields(logrus.Fields{
+							"sub":  sub,
+							"name": claims[0].LicenseFileName,
+						}).Infof("activating licensed services")
+						surveyCtx, survecCtxCancel := context.WithCancel(serveCtx)
+						cancel = survecCtxCancel
+						collector, _ = NewCollector(s.config, claims)
+						err = autosurvey.Start(surveyCtx, "kustomerd", version.Version, []byte(sub), collector)
+						if err != nil {
+							errCh <- fmt.Errorf("failed to start client: %v", err)
+						}
+					} else {
+						logger.Infoln("no customer information available, standing by")
+					}
 				}
 			}
 		}
@@ -162,7 +164,9 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	// License loading / watching.
 	go func() {
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(60 * time.Second)
+		loadHistory := make(map[string]bool)
+		activateHistory := make(map[string]bool)
 		var lastSub string
 		var first bool
 		f := func() {
@@ -181,29 +185,50 @@ func (s *Server) Serve(ctx context.Context) error {
 						}
 						fn := filepath.Join(s.licensePath, info.Name())
 						if f, openErr := os.Open(fn); openErr == nil {
+							log := true
+							c := license.Claims{
+								LicenseID:       fn,
+								LicenseFileName: fn,
+							}
 							r := io.LimitReader(f, licenseSizeLimitBytes)
 							if raw, readErr := ioutil.ReadAll(r); readErr == nil {
 								if token, parseErr := jwt.ParseSigned(string(raw)); parseErr == nil {
-									c := license.Claims{
-										LicenseFileName: fn,
-									}
 									if claimsErr := token.UnsafeClaimsWithoutVerification(&c); claimsErr == nil {
+										if c.Claims.ID != "" {
+											c.LicenseID = c.Claims.ID
+										}
+										if _, ok := loadHistory[c.LicenseID]; ok {
+											log = false
+										}
 										if c.Claims.Subject != "" {
 											if validateErr := c.Claims.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
-												logger.WithError(validateErr).WithField("name", fn).Debugln("license is not valid")
+												if log {
+													logger.WithError(validateErr).WithField("name", fn).Warnln("license is not valid, skipped")
+												}
+											} else {
+												claims = append(claims, &c)
+												if log {
+													logger.WithField("name", fn).Debugln("license is valid, loaded")
+												}
 											}
-											claims = append(claims, &c)
 										}
 									} else {
-										logger.WithError(claimsErr).WithField("name", fn).Errorln("error while parsing license file claims")
+										if log {
+											logger.WithError(claimsErr).WithField("name", fn).Errorln("error while parsing license file claims")
+										}
 									}
 								} else {
-									logger.WithError(parseErr).WithField("name", fn).Errorln("error while parsing license file")
+									if log {
+										logger.WithError(parseErr).WithField("name", fn).Errorln("error while parsing license file")
+									}
 								}
 							} else {
 								logger.WithError(readErr).WithField("name", fn).Errorln("error while reading license file")
 							}
 							f.Close()
+							if log {
+								loadHistory[c.LicenseID] = true
+							}
 						} else {
 							logger.WithError(openErr).WithField("name", fn).Errorln("failed to read license file")
 						}
@@ -218,23 +243,64 @@ func (s *Server) Serve(ctx context.Context) error {
 			})
 			// Deduplicate uid, sorted from newer to older, means everything
 			// which was seen already can be removed.
+			added := make(map[string]bool)
 			claims = func(claims []*license.Claims) []*license.Claims {
 				result := make([]*license.Claims, 0)
 				seen := make(map[string]bool)
 				for _, c := range claims {
+					log := true
+					if _, ok := activateHistory[c.LicenseID]; ok {
+						added[c.LicenseID] = false
+						log = false
+					} else {
+						added[c.LicenseID] = true
+						activateHistory[c.LicenseID] = true
+					}
 					if !seen[c.LicenseFileID] {
 						if c.LicenseFileID != "" {
 							seen[c.LicenseFileID] = true
 						}
 						// Prepend to also reverse.
 						result = append([]*license.Claims{c}, result...)
+						products := []string{}
+						for k := range c.Kopano.Products {
+							products = append(products, k)
+						}
+						if log {
+							logger.WithFields(logrus.Fields{
+								"name":     c.LicenseFileName,
+								"products": products,
+								"id":       c.Claims.ID,
+							}).Infoln("licensed products activated")
+						}
+					} else {
+						if log {
+							logger.WithField("name", c.LicenseFileName).Infoln("skipped")
+						}
 					}
 				}
 				return result
 			}(claims)
+			changed := false
+			for k := range activateHistory {
+				if _, ok := added[k]; !ok {
+					delete(activateHistory, k)
+					logger.WithField("id", k).Debugln("removed, triggering")
+					changed = true
+				}
+			}
+			for k, v := range added {
+				if v {
+					logger.WithField("id", k).Debugln("new, triggering")
+					changed = true
+				}
+			}
 			// Add global configured sub to beginning.
 			if s.sub != "" {
-				claims = append([]*license.Claims{&license.Claims{
+				if changed {
+					logger.WithField("sub", s.sub).Debugln("using global configured sub")
+				}
+				claims = append([]*license.Claims{{
 					Claims: &jwt.Claims{
 						Subject: s.sub,
 					},
@@ -244,7 +310,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			if len(claims) > 0 {
 				sub = claims[0].Claims.Subject
 			}
-			if !first && sub == lastSub {
+			if !first && sub == lastSub && !changed {
 				return
 			}
 			lastSub = sub

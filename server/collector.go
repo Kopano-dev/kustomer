@@ -6,6 +6,7 @@
 package server
 
 import (
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -16,6 +17,8 @@ import (
 )
 
 type Collector struct {
+	mutex sync.RWMutex
+
 	claims []*license.Claims
 	logger logrus.FieldLogger
 }
@@ -27,6 +30,12 @@ func NewCollector(c *Config, claims []*license.Claims) (*Collector, error) {
 	}, nil
 }
 
+func (c *Collector) setClaims(claims []*license.Claims) {
+	c.mutex.Lock()
+	c.claims = claims
+	c.mutex.Unlock()
+}
+
 func (c *Collector) Collect(ch chan<- ksurveyclient.Metric) {
 	licenseCustomer := make([]string, 0)
 	licenseIDs := make([]string, 0)
@@ -34,14 +43,18 @@ func (c *Collector) Collect(ch chan<- ksurveyclient.Metric) {
 	expected := jwt.Expected{
 		Time: time.Now(),
 	}
-	for _, claim := range c.claims {
+
+	c.mutex.RLock()
+	claims := c.claims
+	c.mutex.RUnlock()
+	for _, claim := range claims {
 		sub := claim.Subject
 		if isValidEmail(sub) {
 			sub = hashSub(sub)
 		}
 		licenseCustomer = appendIfMissing(licenseCustomer, sub)
 		if validateErr := claim.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
-			c.logger.WithError(validateErr).Warnln("license is not valid")
+			c.logger.WithField("name", claim.LicenseFileName).WithError(validateErr).Warnln("license is not valid")
 			continue
 		}
 		for id, product := range claim.Kopano.Products {
@@ -69,6 +82,10 @@ func (c *Collector) Collect(ch chan<- ksurveyclient.Metric) {
 		"type":  "string[]",
 		"value": licenseProducts,
 	})
+
+	c.logger.WithField("customer", licenseCustomer).Debugln("collecting license ids")
+	c.logger.WithField("ids", licenseIDs).Debugln("collecting active license ids")
+	c.logger.WithField("products", licenseProducts).Debugln("collecting active licensed product ids")
 }
 
 func appendIfMissing(slice []string, elem string) []string {
