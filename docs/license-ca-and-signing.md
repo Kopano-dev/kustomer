@@ -15,33 +15,52 @@ data.
 ### Create Root CA
 
 ```
-step-cli certificate create "Test Root CA (2020)" test-root-ca.pem test-root-ca.key --profile=root-ca --kty=OKP --crv=Ed25519 --not-after=$(date -I --date="+10 years")T00:00:00Z --not-before=$(date -I --date="today")T00:00:00Z
+step-cli certificate create "Test Root CA (2020)" test-root-ca.crt test-root-ca.key --profile=root-ca --kty=OKP --crv=Ed25519 --not-after=$(date -I --date="+10 years")T00:00:00Z --not-before=$(date -I --date="today")T00:00:00Z
 ```
 
-### Create Intermediate CA and sign with Root CA
+### Create signer certificate and sign with Root CA
+
+This is a leaf certificate, to allow the certificate to be used for signatures.
 
 ```
-step-cli certificate create "Test License Signing CA 1 (2020)" test-license-signing-ca-1-2020.pem test-license-signing-ca-1-2020.key --profile=intermediate-ca --ca=./test-root-ca.pem --ca-key=./test-root-ca.key --kty=OKP --crv=Ed25519 --not-after=$(date -I --date="+2 years")T00:00:00Z --not-before=$(date -I --date="today")T00:00:00Z
+step-cli certificate create "Test License Signer 1 (2020)" test-license-signer-1-2020.crt test-license-signer-1-2020.key --profile=leaf --ca=./test-root-ca.crt --ca-key=./test-root-ca.key --kty=OKP --crv=Ed25519 --not-after=$(date -I --date="+2 years")T00:00:00Z --not-before=$(date -I --date="today")T00:00:00Z
 ```
 
-### Extract public key as JWK from intermediate CA cert
+### Extract public key as JWK from intermediate CA cert and add it to JWKS
 
 ```
-step-cli crypto jwk create test-license-signing-ca-1-2020.jwk test-license-signing-ca-1-2020.private.jwk --from-pem=test-license-signing-ca-1-2020.pem
+step-cli crypto jwk create test-license-signer-1-2020.jwk test-license-signer-1-2020.private.jwk --from-pem=test-license-signer-1-2020.crt --kid=test-license-signer-1-2020
+cat test-license-signer-1-2020.jwk | step-cli crypto jwk keyset add test-license-signing.jwks
 ```
 
-## Create an sign license
+
+## Create and sign license
 
 To simplify the creation of the license claims, kustomerd offers a claims
 generator API (/api/v1/claims-gen) which can be easily used with `curl`.
 
 ```
-curl -s --unix-socket /run/kopano-kustomerd/api.sock 'http://localhost/api/v1/claims-gen?myproduct-a.' | step-cli crypto jwt sign --key=test-license-signing-ca-1-2020.key --kid=test-license-signing-ca-1-2020 --sub="kustomer-42" --iss="kopano" --aud="kopano" --exp=$(date --date="+1 year 00:00:00Z" "+%s") --iat=$(date --date="today 00:00:00Z" "+%s") --nbf=$(date --date="today 00:00:00Z" "+%s") > myproduct-a-kustomer-42.license
+curl -s --unix-socket /run/kopano-kustomerd/api.sock 'http://localhost/api/v1/claims-gen?myproduct-a.' | step-cli crypto jwt sign --key=test-license-signer-1-2020.key --kid=test-license-signer-1-2020 --sub="kustomer-42" --iss="kopano" --aud="kopano" --exp=$(date --date="+1 year 00:00:00Z" "+%s") --iat=$(date --date="today 00:00:00Z" "+%s") --nbf=$(date --date="today 00:00:00Z" "+%s") > myproduct-a-kustomer-42.license
 ```
 
 All the license relevant claims (like sub, iat, nbf, kid) are defined when
 signing the claims with the `step-cli` utility. For details how to add claims
 below.
+
+### Sign license for offline use
+
+In special cases, it might be required to issue a license which can be validated
+offline. To do this, the leaf certificate used to sign the license is included
+in the license. Simply add the `--x5c-cert` parameter to the command above
+(`step-cli crypto sign ...`) and point it to the location of the certificate
+used to sign the key.
+
+```
+... --x5c-cert=test-license-signer-1-2020.crt
+```
+
+If that field is present, and its not possible to fetch the key set remotely,
+the certificate is used to do a local validation.
 
 ### Fixed claims-gen parameters
 
@@ -75,7 +94,7 @@ claims. Duplicated keys are not supported.
 ## Inspect and validate license
 
 ```
-cat myproduct-a-kustomer-42.license | step-cli crypto jwt verify --iss=kopano --aud=kopano --key my-licenses/creation/test-license-signing-ca-1-2020.jwk
+cat myproduct-a-kustomer-42.license | step-cli crypto jwt verify --iss=kopano --aud=kopano --key test-license-signer-1-2020.jwk
 ```
 
 
