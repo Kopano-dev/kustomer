@@ -6,6 +6,9 @@
 package server
 
 import (
+	"crypto/x509"
+	"net/url"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -16,7 +19,11 @@ type Config struct {
 	LicensesPath string
 	ListenPath   string
 
-	JWKURI string
+	Insecure bool
+
+	Trusted  bool
+	JWKSURI  *url.URL
+	CertPool *x509.CertPool
 
 	Logger logrus.FieldLogger
 }

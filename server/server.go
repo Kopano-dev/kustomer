@@ -7,21 +7,28 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/net/http2"
+	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
 
@@ -32,16 +39,36 @@ import (
 const (
 	licenseSizeLimitBytes = 1024 * 1024
 	licenseLeeway         = 24 * time.Hour
+
+	defaultHTTPTimeout               = 30 * time.Second
+	defaultHTTPKeepAlive             = 30 * time.Second
+	defaultHTTPMaxIdleConns          = 5
+	defaultHTTPIdleConnTimeout       = 5 * time.Second
+	defaultHTTPTLSHandshakeTimeout   = 10 * time.Second
+	defaultHTTPExpectContinueTimeout = 1 * time.Second
 )
+
+var defaultHTTPUserAgent = "kustomerd/" + version.Version
 
 // Server is our HTTP server implementation.
 type Server struct {
+	mutex sync.RWMutex
+
 	config *Config
 
 	logger      logrus.FieldLogger
 	licensePath string
 	listenPath  string
 	sub         string
+
+	insecure bool
+	trusted  bool
+
+	jwksURI  *url.URL
+	jwks     *jose.JSONWebKeySet
+	certPool *x509.CertPool
+
+	httpClient *http.Client
 }
 
 // NewServer constructs a server from the provided parameters.
@@ -49,6 +76,12 @@ func NewServer(c *Config) (*Server, error) {
 	s := &Server{
 		config: c,
 		logger: c.Logger,
+
+		insecure: c.Insecure,
+		trusted:  c.Trusted,
+
+		jwksURI:  c.JWKSURI,
+		certPool: c.CertPool,
 	}
 
 	if c.Sub != "" {
@@ -76,6 +109,37 @@ func NewServer(c *Config) (*Server, error) {
 		s.listenPath = listenPath
 	}
 
+	s.httpClient = func() *http.Client {
+		transport := &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   defaultHTTPTimeout,
+				KeepAlive: defaultHTTPKeepAlive,
+				DualStack: true,
+			}).DialContext,
+			MaxIdleConns:          defaultHTTPMaxIdleConns,
+			IdleConnTimeout:       defaultHTTPIdleConnTimeout,
+			TLSHandshakeTimeout:   defaultHTTPTLSHandshakeTimeout,
+			ExpectContinueTimeout: defaultHTTPExpectContinueTimeout,
+		}
+		transport.TLSClientConfig = &tls.Config{
+			ClientSessionCache: tls.NewLRUClientSessionCache(0),
+			InsecureSkipVerify: c.Insecure,
+		}
+		err := http2.ConfigureTransport(transport)
+		if err != nil {
+			panic(err)
+		}
+
+		return &http.Client{
+			Timeout:   defaultHTTPTimeout,
+			Transport: transport,
+		}
+	}()
+	if s.insecure {
+		s.logger.Warnln("insecure mode, TLS client connections are susceptible to man-in-the-middle attacks")
+	}
+
 	return s, nil
 }
 
@@ -101,6 +165,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	exitCh := make(chan bool, 1)
 	signalCh := make(chan os.Signal, 1)
 	startCh := make(chan []*license.Claims, 1)
+	readyCh := make(chan bool, 1)
+	triggerCh := make(chan bool, 1)
 
 	router := mux.NewRouter()
 	s.AddRoutes(serveCtx, router)
@@ -108,6 +174,95 @@ func (s *Server) Serve(ctx context.Context) error {
 	srv := &http.Server{
 		Handler: router,
 	}
+
+	// Load JWKS if we have one.
+	offline := true
+	go func() {
+		if s.jwksURI == nil {
+			logger.Warnln("no JWKS URI is set, running in offline mode")
+			close(readyCh)
+			return
+		}
+		var started bool
+		var etag string
+		requester := func() (*jose.JSONWebKeySet, error) {
+			requestCtx, cancel := context.WithTimeout(serveCtx, 30*time.Second)
+			defer cancel()
+			request, requestErr := http.NewRequestWithContext(requestCtx, http.MethodGet, s.jwksURI.String(), nil)
+			if requestErr != nil {
+				return nil, requestErr
+			}
+			request.Header.Set("User-Agent", defaultHTTPUserAgent)
+			if etag != "" {
+				request.Header.Set("If-None-Match", etag)
+			}
+
+			attempt := 1
+			for {
+				response, responseErr := s.httpClient.Do(request)
+				if responseErr == nil {
+					switch response.StatusCode {
+					case http.StatusNotModified:
+						// Nothing changed. Done for now.
+						return nil, nil
+					case http.StatusOK:
+						etag = response.Header.Get("ETag")
+						decoder := json.NewDecoder(response.Body)
+						jwks := &jose.JSONWebKeySet{}
+						decodeErr := decoder.Decode(jwks)
+						response.Body.Close()
+						if decodeErr == nil {
+							logger.WithField("keys", len(jwks.Keys)).Debugln("JWKS loaded successfully")
+							return jwks, nil
+						} else {
+							logger.WithError(decodeErr).Errorln("failed to parse JWKS")
+						}
+					default:
+						logger.Errorln("unexpected response status when fetching JWKS: %d", response.StatusCode)
+					}
+				}
+				if attempt >= 3 {
+					return nil, responseErr
+				}
+				logger.WithError(responseErr).Debugln("error while fetching JWKS from URI (will retry)")
+				select {
+				case <-serveCtx.Done():
+					return nil, nil
+				case <-time.After(time.Duration(attempt) * 5 * time.Second):
+					attempt++
+				}
+			}
+		}
+
+		for {
+			jwks, requestErr := requester()
+			if requestErr != nil {
+				logger.WithError(requestErr).Warnln("unable to fetch JWKS")
+			} else if jwks != nil {
+				s.mutex.Lock()
+				s.jwks = jwks
+				s.mutex.Unlock()
+				if started {
+					triggerCh <- true
+				}
+			}
+			if !started {
+				offline = jwks == nil
+				close(readyCh)
+				started = true
+				if offline {
+					logger.Warnln("running in offline mode, no JWKS is loaded")
+					return
+				}
+			}
+			select {
+			case <-serveCtx.Done():
+				return
+			case <-time.After(60 * time.Minute):
+				// Refresh.
+			}
+		}
+	}()
 
 	logger.WithField("socket", s.listenPath).Infoln("starting http listener")
 	listener, err := net.Listen("unix", s.listenPath)
@@ -164,13 +319,18 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	// License loading / watching.
 	go func() {
-		ticker := time.NewTicker(60 * time.Second)
 		loadHistory := make(map[string]bool)
 		activateHistory := make(map[string]bool)
 		var lastSub string
 		var first bool
+		var jwks *jose.JSONWebKeySet
 		f := func() {
-			// TODO(longsleep): Load and parse JWKS here.
+			s.mutex.RLock()
+			if jwks != s.jwks {
+				jwks = s.jwks
+				loadHistory = make(map[string]bool)
+			}
+			s.mutex.RUnlock()
 			var sub string
 			claims := make([]*license.Claims, 0)
 			// Load and parse license files.
@@ -190,41 +350,122 @@ func (s *Server) Serve(ctx context.Context) error {
 								LicenseID:       fn,
 								LicenseFileName: fn,
 							}
-							r := io.LimitReader(f, licenseSizeLimitBytes)
-							if raw, readErr := ioutil.ReadAll(r); readErr == nil {
-								if token, parseErr := jwt.ParseSigned(string(raw)); parseErr == nil {
-									if claimsErr := token.UnsafeClaimsWithoutVerification(&c); claimsErr == nil {
-										if c.Claims.ID != "" {
-											c.LicenseID = c.Claims.ID
+							if _, ok := loadHistory[c.LicenseID]; ok {
+								log = false
+							}
+							func() {
+								r := io.LimitReader(f, licenseSizeLimitBytes)
+								if raw, readErr := ioutil.ReadAll(r); readErr == nil {
+									if token, parseErr := jwt.ParseSigned(string(raw)); parseErr == nil {
+										if len(token.Headers) != 1 {
+											if log {
+												logger.WithField("name", fn).Warnln("license with multiple headers, ignored")
+											}
+											return
 										}
-										if _, ok := loadHistory[c.LicenseID]; ok {
-											log = false
+										headers := token.Headers[0]
+										switch jose.SignatureAlgorithm(headers.Algorithm) {
+										case jose.EdDSA:
+										case jose.ES256:
+										case jose.ES384:
+										case jose.ES512:
+										default:
+											if log {
+												logger.WithFields(logrus.Fields{
+													"alg":  headers.Algorithm,
+													"name": fn,
+												}).Warnln("license with unknown alg, ignored")
+											}
+											return
 										}
-										if c.Claims.Subject != "" {
-											if validateErr := c.Claims.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
+										var key interface{}
+										if jwks != nil {
+											keys := jwks.Key(headers.KeyID)
+											if len(keys) == 0 {
 												if log {
-													logger.WithError(validateErr).WithField("name", fn).Warnln("license is not valid, skipped")
+													logger.WithFields(logrus.Fields{
+														"kid":  headers.KeyID,
+														"name": fn,
+													}).Warnln("license with unknown kid, ignored")
 												}
-											} else {
-												claims = append(claims, &c)
+												return
+											}
+											key = &keys[0]
+										}
+										if key == nil {
+											if !offline {
 												if log {
-													logger.WithField("name", fn).Debugln("license is valid, loaded")
+													logger.WithFields(logrus.Fields{
+														"kid":  headers.KeyID,
+														"name": fn,
+													}).Warnln("license found but there is no matching online key, skipped")
 												}
+												return
+											}
+											if s.certPool != nil {
+												// If we have a certificate pool, try to validate the license with it
+												// in offline mode.
+												chain, certsErr := headers.Certificates(x509.VerifyOptions{
+													Roots: s.certPool,
+												})
+												if certsErr != nil {
+													if log {
+														logger.WithError(certsErr).WithFields(logrus.Fields{
+															"kid":  headers.KeyID,
+															"name": fn,
+														}).Warnln("license certificate check failed, skipped")
+													}
+													return
+												}
+												if len(chain) > 0 && len(chain[0]) > 0 {
+													// Extract public key from chain.
+													cert := chain[0][0]
+													key = cert.PublicKey
+												}
+											}
+											if key == nil {
+												if log {
+													logger.WithFields(logrus.Fields{
+														"kid":  headers.KeyID,
+														"name": fn,
+													}).Warnln("license found but there is no matching offline key, skipped")
+												}
+												return
+											}
+										}
+										if claimsErr := token.Claims(key, &c); claimsErr == nil {
+											if c.Claims.ID != "" {
+												c.LicenseID = c.Claims.ID
+											}
+											if _, ok := loadHistory[c.LicenseID]; ok {
+												log = false
+											}
+											if c.Claims.Subject != "" {
+												if validateErr := c.Claims.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
+													if log {
+														logger.WithError(validateErr).WithField("name", fn).Warnln("license is not valid, skipped")
+													}
+												} else {
+													claims = append(claims, &c)
+													if log {
+														logger.WithField("name", fn).Debugln("license is valid, loaded")
+													}
+												}
+											}
+										} else {
+											if log {
+												logger.WithError(claimsErr).WithField("name", fn).Errorln("error while parsing license file claims")
 											}
 										}
 									} else {
 										if log {
-											logger.WithError(claimsErr).WithField("name", fn).Errorln("error while parsing license file claims")
+											logger.WithError(parseErr).WithField("name", fn).Errorln("error while parsing license file")
 										}
 									}
 								} else {
-									if log {
-										logger.WithError(parseErr).WithField("name", fn).Errorln("error while parsing license file")
-									}
+									logger.WithError(readErr).WithField("name", fn).Errorln("error while reading license file")
 								}
-							} else {
-								logger.WithError(readErr).WithField("name", fn).Errorln("error while reading license file")
-							}
+							}()
 							f.Close()
 							if log {
 								loadHistory[c.LicenseID] = true
@@ -321,21 +562,33 @@ func (s *Server) Serve(ctx context.Context) error {
 		select {
 		case <-serveCtx.Done():
 			return
-		default:
+		case <-readyCh:
 			f()
 		}
 		for {
 			select {
 			case <-serveCtx.Done():
 				return
-			case <-ticker.C:
+			case <-triggerCh:
+				f()
+			case <-time.After(60 * time.Second):
 				f()
 			}
 		}
-
 	}()
 
-	logger.Infoln("ready")
+	go func() {
+		select {
+		case <-serveCtx.Done():
+			return
+		case <-readyCh:
+		}
+		logger.WithFields(logrus.Fields{
+			"insecure": s.insecure,
+			"trusted":  s.trusted,
+			"offline":  offline,
+		}).Infoln("ready")
+	}()
 
 	// Wait for exit or error.
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)

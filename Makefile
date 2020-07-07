@@ -34,6 +34,11 @@ TESTPKGS = $(shell $(GO) list -mod=readonly -f '{{ if or .TestGoFiles .XTestGoFi
 CMDS     = $(or $(CMD),$(addprefix cmd/,$(notdir $(shell find "$(PWD)/cmd/" -type d))))
 TIMEOUT  = 30
 
+# Defaults
+
+LICENSE_JWKS_URI ?= https://kustomer.kopano.com/api/stats/v1/jwks.json
+LICENSE_TRUSTED_CERTS_FILE ?= /dev/null
+
 # Build
 
 .PHONY: all
@@ -48,7 +53,7 @@ $(CMDS): vendor ; $(info building $@ ...) @
 		-trimpath \
 		-tags release \
 		-buildmode=exe \
-		-ldflags '-s -w -buildid=reproducible/$(VERSION) -X $(PACKAGE)/version.Version=$(VERSION) -X $(PACKAGE)/version.BuildDate=$(DATE) -extldflags -static' \
+		-ldflags '-s -w -buildid=reproducible/$(VERSION) -X $(PACKAGE)/server.DefaultLicenseJWKSURI=$(LICENSE_JWKS_URI) -X $(PACKAGE)/server.DefaultLicenseCertsBase64=$(shell cat ${LICENSE_TRUSTED_CERTS_FILE} | base64 -w0) -X $(PACKAGE)/version.Version=$(VERSION) -X $(PACKAGE)/version.BuildDate=$(DATE) -extldflags -static' \
 		-o bin/$(notdir $@) ./$@
 
 # Helpers

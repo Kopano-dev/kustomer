@@ -7,7 +7,10 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,8 +21,10 @@ import (
 	"stash.kopano.io/kgol/kustomer/server"
 )
 
-var defaultSubmitURL = "https://kustomer.kopano.com/api/stats/v1/submit"
-var defaultJWKSURI = "https://kustomer.kopano.com/api/stats/v1/jwks.json"
+var defaultCustomerClientSubmitURL = "https://kustomer.kopano.com/api/stats/v1/submit"
+
+var defaultTrusted = true
+var defaultInsecure = false
 
 var globalSub = ""
 var licensesPath = "/etc/kopano/licenses"
@@ -32,12 +37,10 @@ func init() {
 	// Setup survey client for kustomer endpoints.
 	autosurvey.DefaultConfig = autosurvey.DefaultConfig.Clone()
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_URL"); v != "" {
-		defaultSubmitURL = v
+		defaultCustomerClientSubmitURL = v
+		defaultTrusted = false
 	}
-	autosurvey.DefaultConfig.URL = defaultSubmitURL
-	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_JWKS"); v != "" {
-		defaultJWKSURI = v
-	}
+	autosurvey.DefaultConfig.URL = defaultCustomerClientSubmitURL
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_START_DELAY"); v != "" {
 		autosurvey.DefaultConfig.StartDelay, _ = strconv.ParseUint(v, 10, 64)
 	}
@@ -49,8 +52,13 @@ func init() {
 	}
 	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_INSECURE"); v != "" {
 		autosurvey.DefaultConfig.Insecure = v == "yes"
+		defaultTrusted = false
 	}
-	if v := os.Getenv("KOPANO_CUSTOMERCLIENT_SUB"); v != "" {
+	if v := os.Getenv("KOPANO_KUSTOMERD_LICENSE_JWKS_URI"); v != "" {
+		server.DefaultLicenseJWKSURI = v
+		defaultTrusted = false
+	}
+	if v := os.Getenv("KOPANO_KUSTOMERD_LICENSE_SUB"); v != "" {
 		globalSub = strings.TrimSpace(v)
 	}
 }
@@ -71,6 +79,7 @@ func commandServe() *cobra.Command {
 	serveCmd.Flags().String("log-level", "info", "Log level (one of panic, fatal, error, warn, info or debug)")
 	serveCmd.Flags().StringVar(&licensesPath, "licenses-path", licensesPath, "Path to the folder containing Kopano license files")
 	serveCmd.Flags().StringVar(&listenPath, "listen-path", listenPath, "Path to unix socket for API requests")
+	serveCmd.Flags().BoolVar(&defaultInsecure, "insecure", defaultInsecure, "Disable TLS certificate and hostname validation")
 
 	return serveCmd
 }
@@ -83,9 +92,45 @@ func serve(cmd *cobra.Command, args []string) error {
 
 	logger, err := newLogger(!logTimestamp, logLevel)
 	if err != nil {
-		return fmt.Errorf("failed to create logger: %v", err)
+		return fmt.Errorf("failed to create logger: %w", err)
 	}
+
 	logger.Debugln("serve start")
+
+	trusted := defaultTrusted
+
+	certPool := x509.NewCertPool()
+	if server.DefaultLicenseCertsBase64 != "" {
+		licenseCerts, decodeErr := base64.StdEncoding.DecodeString(server.DefaultLicenseCertsBase64)
+		if decodeErr != nil {
+			return fmt.Errorf("failed to decode license root certificate: %w", decodeErr)
+		}
+		if certPool.AppendCertsFromPEM(licenseCerts) {
+			logger.WithField("count", len(certPool.Subjects())).Infoln("loaded root license certificates")
+		} else {
+			logger.Warnln("no license root certificates loaded")
+			trusted = false
+		}
+	} else {
+		logger.Infoln("no license root certificates configured")
+		trusted = false
+	}
+
+	var jwksURI *url.URL
+	if server.DefaultLicenseJWKSURI != "" {
+		jwksURI, err = url.Parse(server.DefaultLicenseJWKSURI)
+		if err != nil {
+			return fmt.Errorf("failed to parse JWKS URI: %w", err)
+		}
+		logger.WithField("jwks_uri", jwksURI.String()).Infoln("JWKS URI available")
+	} else {
+		trusted = false
+		logger.Warnln("no JWKS URI set, this is odd - development build?")
+	}
+
+	if !trusted {
+		logger.Warnln("customization detected, services might reject license information")
+	}
 
 	cfg := &server.Config{
 		Sub: globalSub,
@@ -93,7 +138,11 @@ func serve(cmd *cobra.Command, args []string) error {
 		LicensesPath: licensesPath,
 		ListenPath:   listenPath,
 
-		JWKURI: defaultJWKSURI,
+		Insecure: defaultInsecure,
+
+		Trusted:  trusted,
+		JWKSURI:  jwksURI,
+		CertPool: certPool,
 
 		Logger: logger,
 	}

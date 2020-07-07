@@ -44,7 +44,7 @@ case "${1}" in
 		fi
 
 		if [ -n "$email" ]; then
-			export KOPANO_CUSTOMERCLIENT_EMAIL="$email"
+			export KOPANO_KUSTOMERD_LICENSE_SUB="$email"
 		fi
 
 		;;
