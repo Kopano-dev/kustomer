@@ -70,6 +70,9 @@ type Server struct {
 	certPool *x509.CertPool
 
 	httpClient *http.Client
+
+	readyCh chan struct{}
+	claims  []*license.Claims
 }
 
 // NewServer constructs a server from the provided parameters.
@@ -84,6 +87,8 @@ func NewServer(c *Config) (*Server, error) {
 
 		jwksURI:  c.JWKSURI,
 		certPool: c.CertPool,
+
+		readyCh: make(chan struct{}, 1),
 	}
 
 	if c.Sub != "" {
@@ -151,6 +156,7 @@ func (s *Server) AddRoutes(ctx context.Context, router *mux.Router) {
 	// TODO(longsleep): Add subpath support to all handlers and paths.
 	router.HandleFunc("/health-check", s.HealthCheckHandler)
 	router.HandleFunc("/api/v1/claims-gen", s.ClaimsGenHandler)
+	router.HandleFunc("/api/v1/claims/kopano/products", s.ClaimsKopanoProductsHandler)
 }
 
 // Serve starts all the accociated servers resources and listeners and blocks
@@ -164,17 +170,21 @@ func (s *Server) Serve(ctx context.Context) error {
 	logger := s.logger
 
 	errCh := make(chan error, 2)
-	exitCh := make(chan bool, 1)
+	exitCh := make(chan struct{}, 1)
 	signalCh := make(chan os.Signal, 1)
-	startCh := make(chan []*license.Claims, 1)
-	readyCh := make(chan bool, 1)
+	readyCh := make(chan struct{}, 1)
+	updateCh := make(chan bool, 1)
 	triggerCh := make(chan bool, 1)
 
 	router := mux.NewRouter()
 	s.AddRoutes(serveCtx, router)
 
 	srv := &http.Server{
-		Handler: router,
+		Handler:     router,
+		ConnContext: s.handleConnectionContext,
+		BaseContext: func(net.Listener) context.Context {
+			return serveCtx
+		},
 	}
 
 	// Load JWKS if we have one.
@@ -304,7 +314,10 @@ func (s *Server) Serve(ctx context.Context) error {
 					cancel()
 				}
 				return
-			case claims := <-startCh:
+			case <-updateCh:
+				s.mutex.RLock()
+				claims := s.claims
+				s.mutex.RUnlock()
 				if collector != nil {
 					collector.setClaims(claims)
 				} else {
@@ -334,7 +347,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		loadHistory := make(map[string]bool)
 		activateHistory := make(map[string]bool)
 		var lastSub string
-		var first bool
+		var first bool = true
 		var jwks *jose.JSONWebKeySet
 		var offline bool
 		f := func() {
@@ -569,9 +582,14 @@ func (s *Server) Serve(ctx context.Context) error {
 				return
 			}
 			lastSub = sub
-			first = false
-			// Start.
-			startCh <- claims
+			s.mutex.Lock()
+			s.claims = claims
+			s.mutex.Unlock()
+			if first {
+				close(s.readyCh)
+				first = false
+			}
+			updateCh <- true
 		}
 		select {
 		case <-serveCtx.Done():

@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 
 	"stash.kopano.io/kgol/kustomer/license"
 )
@@ -129,7 +131,130 @@ func (s *Server) ClaimsGenHandler(rw http.ResponseWriter, req *http.Request) {
 
 	encoder := json.NewEncoder(rw)
 	encoder.SetIndent("", "  ")
-	err = encoder.Encode(claims)
+	err = encoder.Encode(&ClaimsGenResponse{
+		Claims: claims,
+	})
+	if err != nil {
+		s.logger.WithError(err).Errorln("claims-gen failed to encode JSON")
+	}
+}
+
+// ClaimsKopanoProductsHandler is a http handler to return the Kopano product
+// data from all currently active license claims as array.
+func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.Request) {
+	err := req.ParseForm()
+	if err != nil {
+		http.Error(rw, "failed to parse request form data", http.StatusBadRequest)
+		return
+	}
+
+	var productFilter map[string]bool
+	if requestedProducts, ok := req.Form["product"]; ok {
+		productFilter = make(map[string]bool)
+		for _, name := range requestedProducts {
+			productFilter[name] = true
+		}
+	}
+
+	func() {
+		fields := logrus.Fields{
+			"products":    req.Form["product"],
+			"ua":          req.Header.Get("User-Agent"),
+			"remote_addr": req.RemoteAddr,
+		}
+		if ucred, ok := GetUcredContextValue(req.Context()); ok {
+			fields["remote_pid"] = ucred.Pid
+			fields["remote_uid"] = ucred.Uid
+		}
+		s.logger.WithFields(fields).Debugln("received claims kopano products request")
+	}()
+
+	// Delay answering this request when the server not ready yet. This is a
+	// help for the clients, so they do not have to implement their own fast
+	// retry logic.
+	select {
+	case <-s.readyCh:
+	case <-req.Context().Done():
+		return
+	case <-time.After(30 * time.Second):
+		s.logger.Warnln("timeout while waiting for server to become ready in claims kopano products request")
+		http.Error(rw, "ready timeout reached", http.StatusServiceUnavailable)
+		return
+	}
+
+	s.mutex.RLock()
+	claims := s.claims
+	trusted := s.trusted
+	offline := s.offline
+	s.mutex.RUnlock()
+
+	response := &ClaimsKopanoProductsResponse{
+		Trusted:  trusted,
+		Offline:  offline,
+		Products: make(map[string]ClaimsKopanoProductsResponseProduct),
+	}
+	products := response.Products
+	for _, claim := range claims {
+		if claim.Kopano.Products == nil {
+			continue
+		}
+		for name, product := range claim.Kopano.Products {
+			if productFilter != nil {
+				if ok := productFilter[name]; !ok {
+					continue
+				}
+			}
+			entry, ok := products[name]
+			if !ok {
+				entry = ClaimsKopanoProductsResponseProduct{
+					OK:     true,
+					Claims: make(map[string]interface{}),
+				}
+				products[name] = entry
+			}
+			for k, nextValue := range product.Unknown {
+				// Claims are sorted from older to newer. Means if unmergable
+				// duplicate claims are encountered, the newer one wins.
+				if haveValue, have := entry.Claims[k]; !have {
+					entry.Claims[k] = nextValue
+					continue
+				} else {
+					switch tNextValue := nextValue.(type) {
+					case int64:
+						tHaveValue, good := haveValue.(int64)
+						if good {
+							entry.Claims[k] = tHaveValue + tNextValue
+						} else {
+							s.logger.WithField("product", product).Debugf("int64 type mismatch in claim %s, using newest", k)
+							entry.Claims[k] = tNextValue
+						}
+					case float64:
+						tHaveValue, good := haveValue.(float64)
+						if good {
+							entry.Claims[k] = tHaveValue + tNextValue
+						} else {
+							s.logger.WithField("product", product).Debugf("float64 type mismatch in claim %s, using newest", k)
+							entry.Claims[k] = tNextValue
+
+						}
+					default:
+						// All other types must match, otherwise a warning will
+						// be logged, and newest is used.
+						if nextValue != haveValue {
+							s.logger.WithField("product", product).Debugf("mismatch in claim value %s, using newest", k)
+							entry.Claims[k] = nextValue
+						}
+					}
+				}
+			}
+		}
+	}
+
+	rw.Header().Set("Content-Type", "application/json")
+
+	encoder := json.NewEncoder(rw)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(response)
 	if err != nil {
 		s.logger.WithError(err).Errorln("claims-gen failed to encode JSON")
 	}
