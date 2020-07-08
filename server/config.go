@@ -26,4 +26,6 @@ type Config struct {
 	CertPool *x509.CertPool
 
 	Logger logrus.FieldLogger
+
+	OnFirstClaims func(*Server)
 }

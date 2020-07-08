@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	systemDaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
 	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
 
@@ -25,6 +26,7 @@ var defaultCustomerClientSubmitURL = "https://kustomer.kopano.com/api/stats/v1/s
 
 var defaultTrusted = true
 var defaultInsecure = false
+var defaultSystemdNotify = false
 
 var globalSub = ""
 var licensesPath = "/etc/kopano/licenses"
@@ -80,6 +82,7 @@ func commandServe() *cobra.Command {
 	serveCmd.Flags().StringVar(&licensesPath, "licenses-path", licensesPath, "Path to the folder containing Kopano license files")
 	serveCmd.Flags().StringVar(&listenPath, "listen-path", listenPath, "Path to unix socket for API requests")
 	serveCmd.Flags().BoolVar(&defaultInsecure, "insecure", defaultInsecure, "Disable TLS certificate and hostname validation")
+	serveCmd.Flags().BoolVar(&defaultSystemdNotify, "systemd-notify", defaultSystemdNotify, "Enable systemd sd_notify callback")
 
 	return serveCmd
 }
@@ -145,6 +148,16 @@ func serve(cmd *cobra.Command, args []string) error {
 		CertPool: certPool,
 
 		Logger: logger,
+
+		OnFirstClaims: func(srv *server.Server) {
+			if defaultSystemdNotify {
+				ok, notifyErr := systemDaemon.SdNotify(false, systemDaemon.SdNotifyReady)
+				logger.WithField("ok", ok).Debugln("called systemd sd_notify ready")
+				if notifyErr != nil {
+					logger.WithError(notifyErr).Errorln("failed to trigger systemd sd_notify")
+				}
+			}
+		},
 	}
 
 	srv, err := server.NewServer(cfg)

@@ -592,6 +592,9 @@ func (s *Server) Serve(ctx context.Context) error {
 			if first {
 				close(s.readyCh)
 				first = false
+				if s.config.OnFirstClaims != nil {
+					go s.config.OnFirstClaims(s)
+				}
 			}
 			updateCh <- true
 		}
