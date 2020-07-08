@@ -63,6 +63,7 @@ type Server struct {
 
 	insecure bool
 	trusted  bool
+	offline  bool
 
 	jwksURI  *url.URL
 	jwks     *jose.JSONWebKeySet
@@ -79,6 +80,7 @@ func NewServer(c *Config) (*Server, error) {
 
 		insecure: c.Insecure,
 		trusted:  c.Trusted,
+		offline:  true,
 
 		jwksURI:  c.JWKSURI,
 		certPool: c.CertPool,
@@ -176,7 +178,6 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 
 	// Load JWKS if we have one.
-	offline := true
 	go func() {
 		if s.jwksURI == nil {
 			logger.Warnln("no JWKS URI is set, running in offline mode")
@@ -185,6 +186,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 		var started bool
 		var etag string
+		var offline = true
 		requester := func() (*jose.JSONWebKeySet, error) {
 			requestCtx, cancel := context.WithTimeout(serveCtx, 30*time.Second)
 			defer cancel()
@@ -201,6 +203,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			for {
 				response, responseErr := s.httpClient.Do(request)
 				if responseErr == nil {
+					offline = false
 					switch response.StatusCode {
 					case http.StatusNotModified:
 						// Nothing changed. Done for now.
@@ -221,6 +224,7 @@ func (s *Server) Serve(ctx context.Context) error {
 						logger.Errorln("unexpected response status when fetching JWKS: %d", response.StatusCode)
 					}
 				}
+				offline = true
 				if attempt >= 3 {
 					return nil, responseErr
 				}
@@ -236,23 +240,31 @@ func (s *Server) Serve(ctx context.Context) error {
 
 		for {
 			jwks, requestErr := requester()
+			s.mutex.Lock()
 			if requestErr != nil {
 				logger.WithError(requestErr).Warnln("unable to fetch JWKS")
 			} else if jwks != nil {
-				s.mutex.Lock()
 				s.jwks = jwks
-				s.mutex.Unlock()
 				if started {
 					triggerCh <- true
 				}
 			}
+			if s.offline != offline {
+				s.offline = offline
+				if started {
+					if offline {
+						logger.Warnln("now offline")
+					} else {
+						logger.Warnln("no longer offline")
+					}
+				}
+			}
+			s.mutex.Unlock()
 			if !started {
-				offline = jwks == nil
 				close(readyCh)
 				started = true
 				if offline {
-					logger.Warnln("running in offline mode, no JWKS is loaded")
-					return
+					logger.Warnln("started in offline mode, no JWKS is loaded")
 				}
 			}
 			select {
@@ -324,12 +336,14 @@ func (s *Server) Serve(ctx context.Context) error {
 		var lastSub string
 		var first bool
 		var jwks *jose.JSONWebKeySet
+		var offline bool
 		f := func() {
 			s.mutex.RLock()
 			if jwks != s.jwks {
 				jwks = s.jwks
 				loadHistory = make(map[string]bool)
 			}
+			offline = s.offline
 			s.mutex.RUnlock()
 			var sub string
 			claims := make([]*license.Claims, 0)
@@ -583,6 +597,9 @@ func (s *Server) Serve(ctx context.Context) error {
 			return
 		case <-readyCh:
 		}
+		s.mutex.RLock()
+		offline := s.offline
+		s.mutex.RUnlock()
 		logger.WithFields(logrus.Fields{
 			"insecure": s.insecure,
 			"trusted":  s.trusted,
