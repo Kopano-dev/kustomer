@@ -48,7 +48,7 @@ const (
 	defaultHTTPExpectContinueTimeout = 1 * time.Second
 )
 
-var defaultHTTPUserAgent = "kustomerd/" + version.Version
+var DefaultHTTPUserAgent = "kustomerd/" + version.Version
 
 // Server is our HTTP server implementation.
 type Server struct {
@@ -71,8 +71,9 @@ type Server struct {
 
 	httpClient *http.Client
 
-	readyCh chan struct{}
-	claims  []*license.Claims
+	readyCh  chan struct{}
+	reloadCh chan chan struct{}
+	claims   []*license.Claims
 }
 
 // NewServer constructs a server from the provided parameters.
@@ -88,7 +89,8 @@ func NewServer(c *Config) (*Server, error) {
 		jwksURI:  c.JWKSURI,
 		certPool: c.CertPool,
 
-		readyCh: make(chan struct{}, 1),
+		readyCh:  make(chan struct{}),
+		reloadCh: make(chan chan struct{}),
 	}
 
 	if c.Sub != "" {
@@ -155,6 +157,7 @@ func NewServer(c *Config) (*Server, error) {
 func (s *Server) AddRoutes(ctx context.Context, router *mux.Router) {
 	// TODO(longsleep): Add subpath support to all handlers and paths.
 	router.HandleFunc("/health-check", s.HealthCheckHandler)
+	router.HandleFunc("/reload", s.ReloadHandler)
 	router.HandleFunc("/api/v1/claims-gen", s.ClaimsGenHandler)
 	router.HandleFunc("/api/v1/claims", s.ClaimsHandler)
 	router.HandleFunc("/api/v1/claims/kopano/products", s.ClaimsKopanoProductsHandler)
@@ -205,7 +208,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			if requestErr != nil {
 				return nil, requestErr
 			}
-			request.Header.Set("User-Agent", defaultHTTPUserAgent)
+			request.Header.Set("User-Agent", DefaultHTTPUserAgent)
 			if etag != "" {
 				request.Header.Set("If-None-Match", etag)
 			}
@@ -596,15 +599,31 @@ func (s *Server) Serve(ctx context.Context) error {
 		case <-serveCtx.Done():
 			return
 		case <-readyCh:
+			select {
+			case <-triggerCh:
+			default:
+			}
 			f()
 		}
 		for {
 			select {
 			case <-serveCtx.Done():
 				return
+			case cbCh := <-s.reloadCh:
+				select {
+				case <-triggerCh:
+				default:
+				}
+				logger.Infoln("reload requested, scanning licenses")
+				f()
+				close(cbCh)
 			case <-triggerCh:
 				f()
 			case <-time.After(60 * time.Second):
+				select {
+				case <-triggerCh:
+				default:
+				}
 				f()
 			}
 		}
@@ -626,15 +645,27 @@ func (s *Server) Serve(ctx context.Context) error {
 		}).Infoln("ready")
 	}()
 
-	// Wait for exit or error.
-	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
-	select {
-	case err = <-errCh:
-		// breaks
-	case reason := <-signalCh:
-		logger.WithField("signal", reason).Warnln("received signal")
-		// breaks
-	}
+	// Wait for exit or error, with support for HUP to reload
+	err = func() error {
+		signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+		for {
+			select {
+			case errFromChannel := <-errCh:
+				return errFromChannel
+			case reason := <-signalCh:
+				if reason == syscall.SIGHUP {
+					logger.Infoln("reload signal received, scanning licenses")
+					select {
+					case triggerCh <- true:
+					default:
+					}
+					continue
+				}
+				logger.WithField("signal", reason).Warnln("received signal")
+				return nil
+			}
+		}
+	}()
 
 	// Shutdown, server will stop to accept new connections, requires Go 1.8+.
 	logger.Infoln("clean server shutdown start")

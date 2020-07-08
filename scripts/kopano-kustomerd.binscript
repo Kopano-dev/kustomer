@@ -49,6 +49,20 @@ case "${1}" in
 
 		;;
 
+	reload)
+
+		# reload uses the API socket, so setup the listen path.
+
+		if [ -z "$listen_path" ]; then
+			listen_path="${DEFAULT_LISTEN_PATH}"
+		fi
+
+		if [ -n "$listen_path" ]; then
+			set -- "$@" --listen-path="$listen_path"
+		fi
+
+		;;
+
 	*)
 		;;
 esac

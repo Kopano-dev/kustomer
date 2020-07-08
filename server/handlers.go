@@ -25,6 +25,61 @@ func (s *Server) HealthCheckHandler(rw http.ResponseWriter, req *http.Request) {
 	rw.WriteHeader(http.StatusOK)
 }
 
+// ReloadHandler is a http handler which triggers reloading of license files and
+// returns when complete.
+func (s *Server) ReloadHandler(rw http.ResponseWriter, req *http.Request) {
+	err := req.ParseForm()
+	if err != nil {
+		http.Error(rw, "failed to parse request form data", http.StatusBadRequest)
+		return
+	}
+
+	if req.Method != http.MethodPost {
+		http.Error(rw, "POST request required", http.StatusBadRequest)
+		return
+	}
+
+	ucred, _ := GetUcredContextValue(req.Context())
+	if ucred == nil {
+		http.Error(rw, "no unix credentials in request", http.StatusInternalServerError)
+		return
+	}
+
+	fields := logrus.Fields{
+		"remote_uid":  ucred.Uid,
+		"ua":          req.Header.Get("User-Agent"),
+		"remote_addr": req.RemoteAddr,
+	}
+	if ucred.Uid != 0 {
+		s.logger.WithFields(fields).Debugln("rejected reload request")
+		http.Error(rw, "reload request must be sent as root", http.StatusForbidden)
+		return
+	}
+	s.logger.WithFields(fields).Infoln("received reload request")
+
+	// Trigger reload with callback channel.
+	cbCh := make(chan struct{})
+	select {
+	case s.reloadCh <- cbCh:
+		// breaks
+	case <-req.Context().Done():
+		return
+	case <-time.After(30 * time.Second):
+		err := fmt.Errorf("timeout triggering reload")
+		s.logger.Errorln(err.Error())
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Wait on callback.
+	select {
+	case <-req.Context().Done():
+		return
+	case <-cbCh:
+		s.logger.Debugln("reload request complete")
+		rw.WriteHeader(http.StatusOK)
+	}
+}
+
 // ClaimsGenHandler is a http handler which can be used to generate license
 // claims using simple URL form requests.
 func (s *Server) ClaimsGenHandler(rw http.ResponseWriter, req *http.Request) {

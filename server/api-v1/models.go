@@ -3,7 +3,7 @@
  * Copyright 2019 Kopano and its licensors
  */
 
-package server
+package api
 
 import (
 	"stash.kopano.io/kgol/kustomer/license"

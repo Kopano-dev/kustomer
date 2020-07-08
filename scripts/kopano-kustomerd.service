@@ -19,6 +19,7 @@ Environment=LC_CTYPE=en_US.UTF-8
 EnvironmentFile=-/etc/kopano/kustomerd.cfg
 RuntimeDirectory=kopano-kustomerd
 ExecStart=/usr/sbin/kopano-kustomerd serve --log-timestamp=false
+ExecReload=/usr/sbin/kopano-kustomerd reload
 
 [Install]
 WantedBy=multi-user.target
