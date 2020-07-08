@@ -17,6 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"stash.kopano.io/kgol/kustomer/license"
+	api "stash.kopano.io/kgol/kustomer/server/api-v1"
 )
 
 // HealthCheckHandler a http handler return 200 OK when server health is fine.
@@ -131,7 +132,7 @@ func (s *Server) ClaimsGenHandler(rw http.ResponseWriter, req *http.Request) {
 
 	encoder := json.NewEncoder(rw)
 	encoder.SetIndent("", "  ")
-	err = encoder.Encode(&ClaimsGenResponse{
+	err = encoder.Encode(&api.ClaimsGenResponse{
 		Claims: claims,
 	})
 	if err != nil {
@@ -151,7 +152,7 @@ func (s *Server) ClaimsHandler(rw http.ResponseWriter, req *http.Request) {
 	claims := s.claims
 	s.mutex.RUnlock()
 
-	response := ClaimsResponse(claims)
+	response := api.ClaimsResponse(claims)
 
 	rw.Header().Set("Content-Type", "application/json")
 
@@ -212,10 +213,10 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 	offline := s.offline
 	s.mutex.RUnlock()
 
-	response := &ClaimsKopanoProductsResponse{
+	response := &api.ClaimsKopanoProductsResponse{
 		Trusted:  trusted,
 		Offline:  offline,
-		Products: make(map[string]ClaimsKopanoProductsResponseProduct),
+		Products: make(map[string]api.ClaimsKopanoProductsResponseProduct),
 	}
 	products := response.Products
 	for _, claim := range claims {
@@ -230,7 +231,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 			}
 			entry, ok := products[name]
 			if !ok {
-				entry = ClaimsKopanoProductsResponseProduct{
+				entry = api.ClaimsKopanoProductsResponseProduct{
 					OK:     true,
 					Claims: make(map[string]interface{}),
 				}
