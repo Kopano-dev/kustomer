@@ -14,6 +14,9 @@ type ClaimsGenResponse struct {
 	license.Claims
 }
 
+// ClaimsResponse is the response model for the claims API endpoint response.
+type ClaimsResponse []*license.Claims
+
 // ClaimsKopanoProductsResponse defines the response model of the claims kopano
 // products API endpoint.
 type ClaimsKopanoProductsResponse struct {

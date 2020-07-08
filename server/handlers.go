@@ -135,7 +135,31 @@ func (s *Server) ClaimsGenHandler(rw http.ResponseWriter, req *http.Request) {
 		Claims: claims,
 	})
 	if err != nil {
-		s.logger.WithError(err).Errorln("claims-gen failed to encode JSON")
+		s.logger.WithField("request_path", req.URL.Path).WithError(err).Errorln("failed to encode JSON")
+	}
+}
+
+// ClaimsHandler is the http hadnler to return the active claims.
+func (s *Server) ClaimsHandler(rw http.ResponseWriter, req *http.Request) {
+	err := req.ParseForm()
+	if err != nil {
+		http.Error(rw, "failed to parse request form data", http.StatusBadRequest)
+		return
+	}
+
+	s.mutex.RLock()
+	claims := s.claims
+	s.mutex.RUnlock()
+
+	response := ClaimsResponse(claims)
+
+	rw.Header().Set("Content-Type", "application/json")
+
+	encoder := json.NewEncoder(rw)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(response)
+	if err != nil {
+		s.logger.WithField("request_path", req.URL.Path).WithError(err).Errorln("failed to encode JSON")
 	}
 }
 
@@ -256,6 +280,6 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 	encoder.SetIndent("", "  ")
 	err = encoder.Encode(response)
 	if err != nil {
-		s.logger.WithError(err).Errorln("claims-gen failed to encode JSON")
+		s.logger.WithField("request_path", req.URL.Path).WithError(err).Errorln("failed to encode JSON")
 	}
 }

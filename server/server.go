@@ -156,6 +156,7 @@ func (s *Server) AddRoutes(ctx context.Context, router *mux.Router) {
 	// TODO(longsleep): Add subpath support to all handlers and paths.
 	router.HandleFunc("/health-check", s.HealthCheckHandler)
 	router.HandleFunc("/api/v1/claims-gen", s.ClaimsGenHandler)
+	router.HandleFunc("/api/v1/claims", s.ClaimsHandler)
 	router.HandleFunc("/api/v1/claims/kopano/products", s.ClaimsKopanoProductsHandler)
 }
 
