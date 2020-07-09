@@ -9,7 +9,9 @@ GOLINT  ?= golangci-lint
 
 GO2XUNIT ?= go2xunit
 
-CHGLOG ?= git-chglog
+CHGLOG  ?= git-chglog
+CURL    ?= curl
+OPENSSL ?= openssl
 
 # Cgo
 
@@ -37,7 +39,8 @@ TIMEOUT  = 30
 # Defaults
 
 LICENSE_JWKS_URI ?= https://kustomer.kopano.com/api/stats/v1/jwks.json
-LICENSE_TRUSTED_CERTS_FILE ?= /dev/null
+LICENSE_TRUSTED_CERTS_FILE ?= license-trusted-certs.pem
+LICENSE_TRUSTED_CERTS_URL ?= https://stash.kopano.io/projects/KLE/repos/pub-keys/raw/root-ca.crt?at=refs%2Ftags%2Fv1.0.0
 
 # Build
 
@@ -47,14 +50,23 @@ all: fmt | $(CMDS) $(PLUGINS)
 plugins: fmt | $(PLUGINS)
 
 .PHONY: $(CMDS)
+$(CMDS): $(LICENSE_TRUSTED_CERTS_FILE)
+$(CMDS): LICENSE_TRUSTED_CERTS_BASE64=$(shell cat ${LICENSE_TRUSTED_CERTS_FILE} | base64 -w0)
 $(CMDS): vendor ; $(info building $@ ...) @
+	@echo "Embedding license trust root:"
+	@echo $(LICENSE_TRUSTED_CERTS_BASE64) | base64 -d | $(OPENSSL) x509 -noout -text
+	@echo $(LICENSE_TRUSTED_CERTS_BASE64) | base64 -d
+	@echo "Embedded license JWKS URI: ${LICENSE_JWKS_URI}"
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build \
 		-mod=vendor \
 		-trimpath \
 		-tags release \
 		-buildmode=exe \
-		-ldflags '-s -w -buildid=reproducible/$(VERSION) -X $(PACKAGE)/server.DefaultLicenseJWKSURI=$(LICENSE_JWKS_URI) -X $(PACKAGE)/server.DefaultLicenseCertsBase64=$(shell cat ${LICENSE_TRUSTED_CERTS_FILE} | base64 -w0) -X $(PACKAGE)/version.Version=$(VERSION) -X $(PACKAGE)/version.BuildDate=$(DATE) -extldflags -static' \
+		-ldflags '-s -w -buildid=reproducible/$(VERSION) -X $(PACKAGE)/server.DefaultLicenseJWKSURI=$(LICENSE_JWKS_URI) -X $(PACKAGE)/server.DefaultLicenseCertsBase64=$(shell echo ${LICENSE_TRUSTED_CERTS_BASE64}) -X $(PACKAGE)/version.Version=$(VERSION) -X $(PACKAGE)/version.BuildDate=$(DATE) -extldflags -static' \
 		-o bin/$(notdir $@) ./$@
+
+$(LICENSE_TRUSTED_CERTS_FILE):
+	test -n "$(LICENSE_TRUSTED_CERTS_URL)" && $(CURL) --output $@ "$(LICENSE_TRUSTED_CERTS_URL)" || touch $@
 
 # Helpers
 

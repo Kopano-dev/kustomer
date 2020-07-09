@@ -6,3 +6,4 @@
 /test/tests.*
 /3rdparty-LICENSES.md
 /.vscode
+/license-trusted-certs.pem
