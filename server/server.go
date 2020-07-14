@@ -28,6 +28,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
+	"golang.org/x/sys/unix"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
@@ -180,6 +181,53 @@ func (s *Server) Serve(ctx context.Context) error {
 	updateCh := make(chan bool, 1)
 	triggerCh := make(chan bool, 1)
 
+	// Check if listen socket can be created.
+	err = func() error {
+		_, statErr := os.Stat(s.listenPath)
+		switch {
+		case statErr == nil:
+			// File exists, this might be a problem, so check if it is a socket
+			// if something is listening on it.
+			conn, connErr := net.DialTimeout("unix", s.listenPath, 5*time.Second)
+			if connErr == nil {
+				conn.Close()
+				return fmt.Errorf("listen-path is already in use, refusing to replace")
+			}
+			if strings.Contains(connErr.Error(), "connection refused") {
+				// Create our own lock, to avoid to delete twice.
+				lock := s.listenPath + ".lock"
+				f, _ := os.Create(lock)
+				if lockErr := unix.Flock(int(f.Fd()), unix.LOCK_EX); lockErr != nil {
+					return fmt.Errorf("failed to lock listen-path: %w", lockErr)
+				}
+				logger.WithField("socket", s.listenPath).Infoln("cleaning up unused existing listen-path")
+				os.Remove(lock)
+				os.Remove(s.listenPath)
+				if lockErr := unix.Flock(int(f.Fd()), unix.LOCK_UN); lockErr != nil {
+					return fmt.Errorf("failed to unlock listen-path: %w", lockErr)
+				}
+			} else {
+				return fmt.Errorf("listen-path exists with error: %w, refusing to replace", connErr)
+			}
+		case os.IsNotExist(statErr):
+			// Not exist, this is what we want. If kustomerd is run correctly via
+			// systemd this is always the case since the runtime directory is
+			// controlled by RuntimeDirectory.
+		default:
+			logger.WithError(statErr).Warnln("failed to access listen-path")
+		}
+
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+	logger.WithField("socket", s.listenPath).Infoln("starting http listener")
+	listener, err := net.Listen("unix", s.listenPath)
+	if err != nil {
+		return err
+	}
+
 	router := mux.NewRouter()
 	s.AddRoutes(serveCtx, router)
 
@@ -289,12 +337,6 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 		}
 	}()
-
-	logger.WithField("socket", s.listenPath).Infoln("starting http listener")
-	listener, err := net.Listen("unix", s.listenPath)
-	if err != nil {
-		return err
-	}
 
 	// HTTP listener.
 	go func() {
