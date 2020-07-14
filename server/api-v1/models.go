@@ -11,7 +11,7 @@ import (
 
 // CLaimsGenResponse is the response model for the claims-gen API endpoint response.
 type ClaimsGenResponse struct {
-	license.Claims
+	*license.Claims
 }
 
 // ClaimsResponse is the response model for the claims API endpoint response.
