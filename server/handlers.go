@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/longsleep/sse"
 	"github.com/sirupsen/logrus"
 
 	"stash.kopano.io/kgol/kustomer/license"
@@ -247,5 +248,78 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 	err = encoder.Encode(response)
 	if err != nil {
 		s.logger.WithField("request_path", req.URL.Path).WithError(err).Errorln("failed to encode JSON")
+	}
+}
+
+// MakeClaimsWatchHandler return a http handler which returns claims related
+// events as server sent events.
+func (s *Server) MakeClaimsWatchHandler() http.HandlerFunc {
+	upgrader := sse.Upgrader{}
+	version := "20200714"
+
+	return func(rw http.ResponseWriter, req *http.Request) {
+		err := req.ParseForm()
+		if err != nil {
+			http.Error(rw, "failed to parse request form data", http.StatusBadRequest)
+			return
+		}
+
+		conn, err := upgrader.Upgrade(rw, req)
+		if err != nil {
+			s.logger.WithError(err).Debugln("failed to upgrade claims watch request to sse")
+			http.Error(rw, "failed to update request", http.StatusBadRequest)
+			return
+		}
+
+		ucred, _ := GetUcredContextValue(req.Context())
+		if ucred == nil {
+			http.Error(rw, "no unix credentials in request", http.StatusInternalServerError)
+			return
+		}
+
+		start := time.Now()
+
+		fields := logrus.Fields{
+			"products":    req.Form["product"],
+			"remote_uid":  ucred.Uid,
+			"remote_pid":  ucred.Pid,
+			"ua":          req.Header.Get("User-Agent"),
+			"remote_addr": req.RemoteAddr,
+		}
+		s.logger.WithFields(fields).Infoln("claims watch started")
+		defer func() {
+			s.logger.WithFields(fields).WithField("duration", time.Since(start)).Infoln("claims watch ended")
+		}()
+
+		// Send initial hello.
+		err = conn.WriteStringEvent("hello", version)
+		if err != nil {
+			s.logger.WithError(err).Debugln("failed to write claims watch initial hello sse event")
+			return
+		}
+
+		// Block until request is done, or other action worty to send event.
+		for {
+			err = nil
+			s.mutex.RLock()
+			updateCh := s.updateCh
+			s.mutex.RUnlock()
+
+			select {
+			case <-s.closeCh:
+				return
+			case <-req.Context().Done():
+				return
+			case <-updateCh:
+				err = conn.WriteStringEvent("claims-updated", "true")
+			case <-time.After(60 * time.Second):
+				err = conn.WriteStringEvent("hello", version)
+			}
+
+			if err != nil {
+				s.logger.WithError(err).Debugln("failed to write claims watch sse event")
+				return
+			}
+		}
 	}
 }

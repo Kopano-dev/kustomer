@@ -74,6 +74,8 @@ type Server struct {
 
 	readyCh  chan struct{}
 	reloadCh chan chan struct{}
+	updateCh chan struct{}
+	closeCh  chan struct{}
 	claims   []*license.Claims
 }
 
@@ -92,6 +94,8 @@ func NewServer(c *Config) (*Server, error) {
 
 		readyCh:  make(chan struct{}),
 		reloadCh: make(chan chan struct{}),
+		updateCh: make(chan struct{}),
+		closeCh:  make(chan struct{}),
 	}
 
 	if c.Sub != "" {
@@ -162,6 +166,7 @@ func (s *Server) AddRoutes(ctx context.Context, router *mux.Router) {
 	router.HandleFunc("/api/v1/claims-gen", s.ClaimsGenHandler)
 	router.HandleFunc("/api/v1/claims", s.ClaimsHandler)
 	router.HandleFunc("/api/v1/claims/kopano/products", s.ClaimsKopanoProductsHandler)
+	router.HandleFunc("/api/v1/claims/watch", s.MakeClaimsWatchHandler())
 }
 
 // Serve starts all the accociated servers resources and listeners and blocks
@@ -178,7 +183,6 @@ func (s *Server) Serve(ctx context.Context) error {
 	exitCh := make(chan struct{}, 1)
 	signalCh := make(chan os.Signal, 1)
 	readyCh := make(chan struct{}, 1)
-	updateCh := make(chan bool, 1)
 	triggerCh := make(chan bool, 1)
 
 	// Check if listen socket can be created.
@@ -354,6 +358,9 @@ func (s *Server) Serve(ctx context.Context) error {
 		var cancel context.CancelFunc
 		var collector *Collector
 		for {
+			s.mutex.RLock()
+			updateCh := s.updateCh
+			s.mutex.RUnlock()
 			select {
 			case <-serveCtx.Done():
 				if cancel != nil {
@@ -640,6 +647,8 @@ func (s *Server) Serve(ctx context.Context) error {
 			lastSub = sub
 			s.mutex.Lock()
 			s.claims = claims
+			updateCh := s.updateCh
+			s.updateCh = make(chan struct{})
 			s.mutex.Unlock()
 			if first {
 				close(s.readyCh)
@@ -648,7 +657,7 @@ func (s *Server) Serve(ctx context.Context) error {
 					go s.config.OnFirstClaims(s)
 				}
 			}
-			updateCh <- true
+			close(updateCh)
 		}
 		select {
 		case <-serveCtx.Done():
@@ -721,6 +730,8 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 		}
 	}()
+
+	close(s.closeCh)
 
 	// Shutdown, server will stop to accept new connections, requires Go 1.8+.
 	logger.Infoln("clean server shutdown start")
