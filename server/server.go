@@ -471,17 +471,27 @@ func (s *Server) Serve(ctx context.Context) error {
 											if _, ok := loadHistory[c.LicenseID]; ok {
 												log = false
 											}
-											if c.Claims.Subject != "" {
-												if validateErr := c.Claims.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
-													if log {
-														logger.WithError(validateErr).WithField("name", fn).Warnln("license is not valid, skipped")
-													}
-												} else {
-													claims = append(claims, &c)
-													if log {
-														logger.WithField("name", fn).Debugln("license is valid, loaded")
-													}
+											if validateErr := c.Claims.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
+												if log {
+													logger.WithError(validateErr).WithField("name", fn).Warnln("license is not valid, skipped")
 												}
+												return
+											} else {
+												subject := strings.TrimSpace(c.Claims.Subject)
+												if subject == "" {
+													if log {
+														logger.WithFields(logrus.Fields{
+															"kid":  headers.KeyID,
+															"name": fn,
+														}).Warnln("license found but it's sub claim is empty, skipped")
+													}
+													return
+												}
+												claims = append(claims, &c)
+												if log {
+													logger.WithField("name", fn).Debugln("license is valid, loaded")
+												}
+												return
 											}
 										} else {
 											if log {
