@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+
+
+## v0.1.1 (2020-07-14)
+
 - Log a warning, when encountering license files without a sub claim
 
 
