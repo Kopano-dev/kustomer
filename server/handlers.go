@@ -13,6 +13,7 @@ import (
 
 	"github.com/longsleep/sse"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/square/go-jose.v2/jwt"
 
 	"stash.kopano.io/kgol/kustomer/license"
 	api "stash.kopano.io/kgol/kustomer/server/api-v1"
@@ -182,7 +183,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 	response := &api.ClaimsKopanoProductsResponse{
 		Trusted:  trusted,
 		Offline:  offline,
-		Products: make(map[string]api.ClaimsKopanoProductsResponseProduct),
+		Products: make(map[string]*api.ClaimsKopanoProductsResponseProduct),
 	}
 	products := response.Products
 	for _, claim := range claims {
@@ -197,12 +198,14 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 			}
 			entry, ok := products[name]
 			if !ok {
-				entry = api.ClaimsKopanoProductsResponseProduct{
-					OK:     true,
-					Claims: make(map[string]interface{}),
+				entry = &api.ClaimsKopanoProductsResponseProduct{
+					OK:          true,
+					Claims:      make(map[string]interface{}),
+					Expirations: make([]*jwt.NumericDate, 0),
 				}
 				products[name] = entry
 			}
+			entry.Expirations = append(entry.Expirations, claim.Expiry)
 			for k, nextValue := range product.Unknown {
 				// Claims are sorted from older to newer. Means if unmergable
 				// duplicate claims are encountered, the newer one wins.

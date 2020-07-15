@@ -6,6 +6,8 @@
 package api
 
 import (
+	"gopkg.in/square/go-jose.v2/jwt"
+
 	"stash.kopano.io/kgol/kustomer/license"
 )
 
@@ -20,14 +22,15 @@ type ClaimsResponse []*license.Claims
 // ClaimsKopanoProductsResponse defines the response model of the claims kopano
 // products API endpoint.
 type ClaimsKopanoProductsResponse struct {
-	Trusted  bool                                           `json:"trusted"`
-	Offline  bool                                           `json:"offline"`
-	Products map[string]ClaimsKopanoProductsResponseProduct `json:"products"`
+	Trusted  bool                                            `json:"trusted"`
+	Offline  bool                                            `json:"offline"`
+	Products map[string]*ClaimsKopanoProductsResponseProduct `json:"products"`
 }
 
 // ClaimsKopanoProductsResponseProduct is the individual product entryu for
 // products returned by the kopano products API endpoint.
 type ClaimsKopanoProductsResponseProduct struct {
-	OK     bool                   `json:"ok"`
-	Claims map[string]interface{} `json:"claims"`
+	OK          bool                   `json:"ok"`
+	Claims      map[string]interface{} `json:"claims"`
+	Expirations []*jwt.NumericDate     `json:"expirations"`
 }
