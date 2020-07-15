@@ -219,7 +219,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 						if good {
 							entry.Claims[k] = tHaveValue + tNextValue
 						} else {
-							s.logger.WithField("product", product).Debugf("int64 type mismatch in claim %s, using newest", k)
+							s.logger.WithField("product", name).Debugf("int64 type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 						}
 					case float64:
@@ -227,7 +227,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 						if good {
 							entry.Claims[k] = tHaveValue + tNextValue
 						} else {
-							s.logger.WithField("product", product).Debugf("float64 type mismatch in claim %s, using newest", k)
+							s.logger.WithField("product", name).Debugf("float64 type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 
 						}
@@ -235,7 +235,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 						// All other types must match, otherwise a warning will
 						// be logged, and newest is used.
 						if nextValue != haveValue {
-							s.logger.WithField("product", product).Debugf("mismatch in claim value %s, using newest", k)
+							s.logger.WithField("product", name).Debugf("mismatch in claim value %s, using newest", k)
 							entry.Claims[k] = nextValue
 						}
 					}
