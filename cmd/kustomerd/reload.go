@@ -45,12 +45,15 @@ func reload(cmd *cobra.Command, args []string) error {
 		Host:   "localhost",
 		Path:   "/reload",
 	}
+
+	var dialer net.Dialer
 	client := http.Client{
 		Timeout: time.Second * 60,
 		Transport: &http.Transport{
-			Dial: func(proto, addr string) (conn net.Conn, err error) {
-				return net.Dial("unix", listenPath)
+			DialContext: func(ctx context.Context, proto, addr string) (conn net.Conn, err error) {
+				return dialer.DialContext(ctx, "unix", listenPath)
 			},
+			DisableKeepAlives: true,
 		},
 	}
 
