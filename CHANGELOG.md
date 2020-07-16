@@ -4,6 +4,18 @@
 
 
 
+## v0.2.0 (2020-07-16)
+
+- Update sse library
+- Disable keep-alive on unix socket API
+- Fix log for product field
+- Disable HTTP keep alive on the unix socket request commands
+- Add expirations per product in aggregation
+- Add claims watch endpoint using HTTP SSE protocol
+- Make claims-gen code importable as Go module
+- Add support to delete unused listen socket on startup
+
+
 ## v0.1.1 (2020-07-14)
 
 - Log a warning, when encountering license files without a sub claim
