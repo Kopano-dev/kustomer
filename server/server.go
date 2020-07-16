@@ -242,6 +242,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			return serveCtx
 		},
 	}
+	srv.SetKeepAlivesEnabled(false)
 
 	// Load JWKS if we have one.
 	go func() {
