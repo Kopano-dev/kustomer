@@ -30,7 +30,9 @@ type ClaimsKopanoProductsResponse struct {
 // ClaimsKopanoProductsResponseProduct is the individual product entryu for
 // products returned by the kopano products API endpoint.
 type ClaimsKopanoProductsResponseProduct struct {
-	OK          bool                   `json:"ok"`
-	Claims      map[string]interface{} `json:"claims"`
-	Expirations []*jwt.NumericDate     `json:"expirations"`
+	OK                          bool                   `json:"ok"`
+	Claims                      map[string]interface{} `json:"claims"`
+	Expiry                      []*jwt.NumericDate     `json:"expiry"`
+	DisplayName                 []string               `json:"dn"`
+	SupportIdentificationNumber []string               `json:"sin"`
 }

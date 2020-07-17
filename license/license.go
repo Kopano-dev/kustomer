@@ -54,6 +54,8 @@ type Claims struct {
 	LicenseFileName string `json:"-"`
 	LicenseID       string `json:"-"`
 
-	LicenseFileID string `json:"uid"`
-	Kopano        Kopano `json:"k"`
+	LicenseFileID               string `json:"uid"`
+	DisplayName                 string `json:"dn"`
+	SupportIdentificationNumber string `json:"sin"`
+	Kopano                      Kopano `json:"k"`
 }

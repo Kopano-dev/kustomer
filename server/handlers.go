@@ -199,13 +199,21 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 			entry, ok := products[name]
 			if !ok {
 				entry = &api.ClaimsKopanoProductsResponseProduct{
-					OK:          true,
-					Claims:      make(map[string]interface{}),
-					Expirations: make([]*jwt.NumericDate, 0),
+					OK:                          true,
+					Claims:                      make(map[string]interface{}),
+					Expiry:                      make([]*jwt.NumericDate, 0),
+					DisplayName:                 make([]string, 0),
+					SupportIdentificationNumber: make([]string, 0),
 				}
 				products[name] = entry
 			}
-			entry.Expirations = append(entry.Expirations, claim.Expiry)
+			entry.Expiry = append(entry.Expiry, claim.Expiry)
+			if claim.DisplayName != "" {
+				entry.DisplayName = append(entry.DisplayName, claim.DisplayName)
+			}
+			if claim.SupportIdentificationNumber != "" {
+				entry.SupportIdentificationNumber = append(entry.SupportIdentificationNumber, claim.SupportIdentificationNumber)
+			}
 			for k, nextValue := range product.Unknown {
 				// Claims are sorted from older to newer. Means if unmergable
 				// duplicate claims are encountered, the newer one wins.

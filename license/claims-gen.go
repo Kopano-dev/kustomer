@@ -37,6 +37,10 @@ func GenerateClaims(params map[string][]string) (*Claims, error) {
 		switch k {
 		case "uid":
 			claims.LicenseFileID = v
+		case "dn":
+			claims.DisplayName = v
+		case "sin":
+			claims.SupportIdentificationNumber = v
 		default:
 			parts := strings.SplitN(k, ".", 2)
 			if len(parts) != 2 {
