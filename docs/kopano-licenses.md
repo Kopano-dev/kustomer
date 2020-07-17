@@ -84,6 +84,7 @@ And in its plain form (JOSE header and claims set):
 | aud            | kopano | Audience (must be kopano)
 | sub            |        | Customer ID or customer email
 | dn             |        | Human readable license display name (e.g. customer name)
+| sin            |        | Support identification number
 | exp            |        | Expiration time
 | nbf            |        | Not before time
 | iat            |        | Issued at time
