@@ -83,7 +83,7 @@ And in its plain form (JOSE header and claims set):
 | iss            | kopano | Issuer identifier (must be kopano)
 | aud            | kopano | Audience (must be kopano)
 | sub            |        | Customer ID or customer email
-| dsp            |        | Human readable license display name (e.g. customer name)
+| dn             |        | Human readable license display name (e.g. customer name)
 | exp            |        | Expiration time
 | nbf            |        | Not before time
 | iat            |        | Issued at time
