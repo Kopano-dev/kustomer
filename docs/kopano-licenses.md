@@ -101,6 +101,7 @@ The license data is found in the `k` claim and contains the following fields.
 | v              | 0      | Kopano license data version
 | products       |        | Kopano licensed product data mapping
 
+
 ### JWT Kopano license product data mapping
 
 The `products` key contains a mapping where the keys identify the licensed Kopano
@@ -110,3 +111,30 @@ product and the individual values are specific to that particular product.
 | -------------- | ------ | ---------------------------------------------
 | lid            |        | Unique Kopano license ID
 | ...            |        | All other fields are specific to the product
+
+### Kopano product specific fields
+
+The following products and product-specific fields/claims are valid for use in the licenses.
+
+| Product name   | Claim       | Accepted values
+| -------------- | ----------- | ---------------------------------------------
+| **groupware**  |             | 
+|                | edition     | (string) basic, professional, enterprise, hosted
+|                | max-users   | (integer) 0..999999
+|                | max-shared  | (integer) 0..999999
+|                | multiserver | (boolean)
+|                | multitenant | (boolean)
+|                | archiver    | (boolean)
+|                | plugins     | (array) array with list of plugins allowed in webapp
+| **meet**       |             | 
+|                | max-users   | (integer) 0..999999
+|                | max-groups  | (integer) 0..999999
+|                | guests      | (boolean)
+|                | sfu         | (boolean)
+|                | webinars    | (boolean)
+
+Plugins allowed in 'plugins' section of groupware claim:
+
+* **files** - Kopano Files plugin
+* **smime** - S/MIME plugin
+* **mdm** - Mobile Device Management plugin 
