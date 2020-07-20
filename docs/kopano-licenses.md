@@ -119,12 +119,13 @@ The following products and product-specific fields/claims are valid for use in t
 | Product name   | Claim       | Accepted values
 | -------------- | ----------- | ---------------------------------------------
 | **groupware**  |             | 
-|                | edition     | (string) basic, professional, enterprise, hosted
+|                | edition     | (string) basic, professional, enterprise
 |                | max-users   | (integer) 0..999999
 |                | max-shared  | (integer) 0..999999
 |                | multiserver | (boolean)
 |                | multitenant | (boolean)
 |                | archiver    | (boolean)
+|                | payperuse   | (boolean)
 |                | plugins     | (array) array with list of plugins allowed in webapp
 | **meet**       |             | 
 |                | max-users   | (integer) 0..999999
@@ -135,6 +136,7 @@ The following products and product-specific fields/claims are valid for use in t
 
 Plugins allowed in 'plugins' section of groupware claim:
 
-* **files** - Kopano Files plugin
+* **files** - Files plugin
 * **smime** - S/MIME plugin
 * **mdm** - Mobile Device Management plugin 
+* **meet** - Meet plugin
