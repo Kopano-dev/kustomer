@@ -4,6 +4,15 @@
 
 
 
+## v0.3.0 (2020-07-17)
+
+- Add dn, sin and refactor expiry
+- Add support identification number
+- Change dsp -> dn
+- Fix indentation
+- Add human readable license display name field to license, allowing for easier identification for customer.
+
+
 ## v0.2.0 (2020-07-16)
 
 - Update sse library
