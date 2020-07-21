@@ -227,7 +227,12 @@ func (s *Server) Serve(ctx context.Context) error {
 		return err
 	}
 	logger.WithField("socket", s.listenPath).Infoln("starting http listener")
+	// NOTE(longsleep): On Linux, connecting to a stream socket object requires
+	// write permission on that socket. See https://man7.org/linux/man-pages/man7/unix.7.html
+	// for reference.
+	umask := unix.Umask(0111) //nolint:gocritic // Octal umask, rw for all.
 	listener, err := net.Listen("unix", s.listenPath)
+	unix.Umask(umask) // Restore previous umask.
 	if err != nil {
 		return err
 	}
