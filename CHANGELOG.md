@@ -4,7 +4,12 @@
 
 
 
-## v0.3.0 (2020-07-17)
+## v0.3.1 (2020-07-21)
+
+- Set umask 0111 to allow everyone to connect to api socket
+
+
+## v0.3.0 (2020-07-20)
 
 - Add dn, sin and refactor expiry
 - Add support identification number
