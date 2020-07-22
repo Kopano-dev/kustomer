@@ -133,6 +133,7 @@ The following products and product-specific fields/claims are valid for use in t
 |                | guests      | (boolean)
 |                | sfu         | (boolean)
 |                | webinars    | (boolean)
+|                | turnaccess  | (boolean)
 
 Plugins allowed in 'plugins' section of groupware claim:
 
