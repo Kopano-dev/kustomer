@@ -21,3 +21,12 @@ func hashSub(sub string) string {
 	h := sha256.Sum256([]byte(sub))
 	return hex.EncodeToString(h[:])
 }
+
+func appendIfMissingS(slice []string, s string) []string {
+	for _, v := range slice {
+		if v == s {
+			return slice
+		}
+	}
+	return append(slice, s)
+}

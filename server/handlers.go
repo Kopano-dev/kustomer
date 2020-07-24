@@ -209,10 +209,10 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 			}
 			entry.Expiry = append(entry.Expiry, claim.Expiry)
 			if claim.DisplayName != "" {
-				entry.DisplayName = append(entry.DisplayName, claim.DisplayName)
+				entry.DisplayName = appendIfMissingS(entry.DisplayName, claim.DisplayName)
 			}
 			if claim.SupportIdentificationNumber != "" {
-				entry.SupportIdentificationNumber = append(entry.SupportIdentificationNumber, claim.SupportIdentificationNumber)
+				entry.SupportIdentificationNumber = appendIfMissingS(entry.SupportIdentificationNumber, claim.SupportIdentificationNumber)
 			}
 			for k, nextValue := range product.Unknown {
 				// Claims are sorted from older to newer. Means if unmergable
@@ -238,6 +238,17 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 							s.logger.WithField("product", name).Debugf("float64 type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 
+						}
+					case []string:
+						tHaveValue, good := haveValue.([]string)
+						if good {
+							for _, v := range tNextValue {
+								tHaveValue = appendIfMissingS(tHaveValue, v)
+							}
+							entry.Claims[k] = tHaveValue
+						} else {
+							s.logger.WithField("product", name).Debugf("[]string type mismatch in claim %s, using newest", k)
+							entry.Claims[k] = tNextValue
 						}
 					default:
 						// All other types must match, otherwise a warning will

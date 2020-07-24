@@ -30,9 +30,7 @@ func GenerateClaims(params map[string][]string) (*Claims, error) {
 	}
 
 	for k, values := range params {
-		if len(values) > 1 {
-			return nil, fmt.Errorf("multiple values for key %v", k)
-		}
+		multi := false
 		v := values[0]
 		switch k {
 		case "uid":
@@ -94,9 +92,20 @@ func GenerateClaims(params map[string][]string) (*Claims, error) {
 						return nil, fmt.Errorf("failed to parse float value for %v: %w", k, parseErr)
 					}
 					tv = fv
+				case "[]string":
+					multi = true
+					var sa []string
+					if cv, ok := product.Unknown[k]; ok {
+						sa = cv.([]string)
+					}
+					sa = append(sa, values...)
+					tv = sa
 				}
 				product.Unknown[k] = tv
 			}
+		}
+		if !multi && len(values) > 1 {
+			return nil, fmt.Errorf("multiple values for key %v", k)
 		}
 	}
 

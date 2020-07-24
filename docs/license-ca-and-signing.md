@@ -86,9 +86,10 @@ type.
 | int | 64-bit integer (base 10) |
 | float | 64-bit float |
 | bool | boolean, converts values like 0, 1, true, false to their corresponding boolean value |
+| []string | String array type
 
 All keys with the same prefix end up in the same product key in the license
-claims. Duplicated keys are not supported.
+claims. Duplicated keys are only allowed for array types.
 
 
 ## Inspect and validate license
