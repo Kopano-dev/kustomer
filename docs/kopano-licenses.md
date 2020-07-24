@@ -34,7 +34,7 @@ can contain license information for multiple Kopano products together with an
 Kopano specific unique identifier for each customer and date/time information
 when the license is valid. Generally JWT licenses expire and have to be
 renewed regularly. Detail specification of the license format is found at
-https://tools.ietf.org/html/rfc7519.
+https://tools.ietf.org/html/rfc7519 and https://tools.ietf.org/html/rfc7517.
 
 ### Example JWT license
 
@@ -80,6 +80,7 @@ And in its plain form (JOSE header and claims set):
 | -------------- | ------ | -----------------------------------
 | typ  (header)  | JWT    | License type, always JWT
 | alg  (header)  | ES256  | JSON Web Algorithm (JWA)
+| x5c  (header)  |        | Array of certificate value strings for offline validation (optional)
 | iss            | kopano | Issuer identifier (must be kopano)
 | aud            | kopano | Audience (must be kopano)
 | sub            |        | Customer ID or customer email
@@ -118,7 +119,7 @@ The following products and product-specific fields/claims are valid for use in t
 
 | Product name   | Claim       | Accepted values
 | -------------- | ----------- | ---------------------------------------------
-| **groupware**  |             | 
+| **groupware**  |             |
 |                | edition     | (string) basic, professional, enterprise
 |                | max-users   | (integer) 0..999999
 |                | max-shared  | (integer) 0..999999
@@ -127,7 +128,7 @@ The following products and product-specific fields/claims are valid for use in t
 |                | archiver    | (boolean)
 |                | payperuse   | (boolean)
 |                | plugins     | (array) array with list of plugins allowed in webapp
-| **meet**       |             | 
+| **meet**       |             |
 |                | max-users   | (integer) 0..999999
 |                | max-groups  | (integer) 0..999999
 |                | guests      | (boolean)
@@ -139,5 +140,5 @@ Plugins allowed in 'plugins' section of groupware claim:
 
 * **files** - Files plugin
 * **smime** - S/MIME plugin
-* **mdm** - Mobile Device Management plugin 
+* **mdm** - Mobile Device Management plugin
 * **meet** - Meet plugin
