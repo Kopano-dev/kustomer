@@ -196,6 +196,11 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 					continue
 				}
 			}
+			logger := s.logger.WithFields(logrus.Fields{
+				"product": name,
+				"name":    claim.LicenseFileName,
+			})
+			aggregate := true
 			entry, ok := products[name]
 			if !ok {
 				entry = &api.ClaimsKopanoProductsResponseProduct{
@@ -204,19 +209,52 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 					Expiry:                      make([]*jwt.NumericDate, 0),
 					DisplayName:                 make([]string, 0),
 					SupportIdentificationNumber: make([]string, 0),
+					ExclusiveClaims:             make(map[string]interface{}),
 				}
 				products[name] = entry
 			}
-			entry.Expiry = append(entry.Expiry, claim.Expiry)
-			if claim.DisplayName != "" {
-				entry.DisplayName = appendIfMissingS(entry.DisplayName, claim.DisplayName)
+			currentExclusiveClaims := make(map[string]interface{})
+			if exclusive, ok := product.Unknown[license.ExclusiveClaim]; ok {
+				// This license has exclusive claims.
+				exclusiveClaims, _ := exclusive.([]string)
+				if exclusiveClaims == nil {
+					logger.Debugf("unknown exclusive claims format, skipping all related claims")
+					continue
+				}
+				for _, exclusiveClaim := range exclusiveClaims {
+					currentExclusiveClaims[exclusiveClaim] = nil
+				}
 			}
-			if claim.SupportIdentificationNumber != "" {
-				entry.SupportIdentificationNumber = appendIfMissingS(entry.SupportIdentificationNumber, claim.SupportIdentificationNumber)
+			for k, nextValue := range product.Unknown {
+				// Validate exclusive claims.
+				if k == license.ExclusiveClaim {
+					// Do not validate exclusive claim, it was already handled above.
+					continue
+				}
+				if exclusiveValue, exclusive := entry.ExclusiveClaims[k]; exclusive {
+					// Check for existing exclusive claims, violating our new value.
+					if nextValue != exclusiveValue {
+						logger.Warnf("conflict of exclusive claim %s, any older license with a conflicting value of this claim must be removed before this license can be used")
+						aggregate = false
+					}
+					continue
+				}
+				if _, ok := currentExclusiveClaims[k]; ok {
+					// Check if the claim is now becoming exclusive.
+					currentExclusiveClaims[k] = nextValue
+				}
+			}
+			if !aggregate {
+				logger.Debugln("skipping claim value aggregation")
+				continue
 			}
 			for k, nextValue := range product.Unknown {
 				// Claims are sorted from older to newer. Means if unmergable
 				// duplicate claims are encountered, the newer one wins.
+				if k == license.ExclusiveClaim {
+					// Do not aggregate exclusive claims.
+					continue
+				}
 				if haveValue, have := entry.Claims[k]; !have {
 					entry.Claims[k] = nextValue
 					continue
@@ -227,7 +265,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 						if good {
 							entry.Claims[k] = tHaveValue + tNextValue
 						} else {
-							s.logger.WithField("product", name).Debugf("int64 type mismatch in claim %s, using newest", k)
+							logger.Debugf("int64 type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 						}
 					case float64:
@@ -235,7 +273,7 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 						if good {
 							entry.Claims[k] = tHaveValue + tNextValue
 						} else {
-							s.logger.WithField("product", name).Debugf("float64 type mismatch in claim %s, using newest", k)
+							logger.Debugf("float64 type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 
 						}
@@ -247,17 +285,30 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 							}
 							entry.Claims[k] = tHaveValue
 						} else {
-							s.logger.WithField("product", name).Debugf("[]string type mismatch in claim %s, using newest", k)
+							logger.Debugf("[]string type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 						}
 					default:
 						// All other types must match, otherwise a warning will
 						// be logged, and newest is used.
 						if nextValue != haveValue {
-							s.logger.WithField("product", name).Debugf("mismatch in claim value %s, using newest", k)
+							logger.Debugf("mismatch in claim value %s, using newest", k)
 							entry.Claims[k] = nextValue
 						}
 					}
+				}
+			}
+			entry.Expiry = append(entry.Expiry, claim.Expiry)
+			if claim.DisplayName != "" {
+				entry.DisplayName = appendIfMissingS(entry.DisplayName, claim.DisplayName)
+			}
+			if claim.SupportIdentificationNumber != "" {
+				entry.SupportIdentificationNumber = appendIfMissingS(entry.SupportIdentificationNumber, claim.SupportIdentificationNumber)
+			}
+			for k, v := range currentExclusiveClaims {
+				// Finally pin all non-nil new exclusive claims to their values.
+				if v != nil {
+					entry.ExclusiveClaims[k] = v
 				}
 			}
 		}

@@ -110,8 +110,17 @@ product and the individual values are specific to that particular product.
 
 | Key            | Value  | Description
 | -------------- | ------ | ---------------------------------------------
-| lid            |        | Unique Kopano license ID
+| lid            |        | (string) Unique Kopano license ID
+| exclusive      |        | ([]string) list of claims flagged as exclusive
 | ...            |        | All other fields are specific to the product
+
+Licenses can use the `exclusive` claim to mark individual product claims to be
+exclusive. When such a claim is exclusive, all other licenses for the same
+product claim must have the exact same value as the license claim value for
+the oldest valid license defining that product claim as exclusive. If such a
+product claim value is not having an exclusive value, none of the license claims
+of the product of the corresponding license is activated until the other older
+license with a different value for the exclusive claim is removed.
 
 ### Kopano product specific fields
 
@@ -127,7 +136,7 @@ The following products and product-specific fields/claims are valid for use in t
 |                | multitenant | (boolean)
 |                | archiver    | (boolean)
 |                | payperuse   | (boolean)
-|                | plugins     | (array) array with list of plugins allowed in webapp
+|                | plugins     | ([]string) list of plugins allowed in webapp
 | **meet**       |             |
 |                | max-users   | (integer) 0..999999
 |                | max-groups  | (integer) 0..999999

@@ -11,6 +11,10 @@ import (
 	"gopkg.in/square/go-jose.v2/jwt"
 )
 
+// ExclusiveClaim is the claim used to describe which other claims are to be
+// treated exclusive.
+const ExclusiveClaim = "exclusive"
+
 // A Product holds the license information for an individual Kopano product.
 type Product struct {
 	LicenseID string `json:"lid"`

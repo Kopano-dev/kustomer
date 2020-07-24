@@ -60,9 +60,13 @@ func GenerateClaims(params map[string][]string) (*Claims, error) {
 
 			t := "string"
 			kWithType := strings.SplitN(parts[1], ":", 2)
-			k := kWithType[0]
+			k = kWithType[0]
 			if len(kWithType) == 2 {
 				t = kWithType[1]
+			}
+
+			if k == ExclusiveClaim && t != "[]string" {
+				return nil, fmt.Errorf("exclusive claim must be of type []string")
 			}
 
 			switch k {

@@ -35,4 +35,6 @@ type ClaimsKopanoProductsResponseProduct struct {
 	Expiry                      []*jwt.NumericDate     `json:"expiry"`
 	DisplayName                 []string               `json:"dn"`
 	SupportIdentificationNumber []string               `json:"sin"`
+
+	ExclusiveClaims map[string]interface{} `json:"-"`
 }
