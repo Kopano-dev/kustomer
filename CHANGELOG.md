@@ -4,6 +4,17 @@
 
 
 
+## v0.4.0 (2020-07-24)
+
+- Describe purpose of fields in product claims
+- Add support for exclusive claims
+- Add support for []string type in product license claims
+- Describe x5c header license claim
+- Introduce turnaccess field to Meet claim in licenses
+- Adjusted for out-of-band comments from [@aroesler](https://stash.kopano.io/aroesler/)
+- Add list of Kopano products and product-specific license fields
+
+
 ## v0.3.1 (2020-07-21)
 
 - Set umask 0111 to allow everyone to connect to api socket
