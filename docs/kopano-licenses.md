@@ -126,28 +126,29 @@ license with a different value for the exclusive claim is removed.
 
 The following products and product-specific fields/claims are valid for use in the licenses.
 
-| Product name   | Claim       | Accepted values                                        | Description of purpose
-| -------------- | ----------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------
-| **groupware**  |             |                                                        |
-|                | edition     | (string) basic, professional, enterprise               | The purchased groupware edition (Basic, Professional or Enterprise)
-|                | max-users   | (integer) 0..999999                                    | The maximum number of active users (users who can log in)
-|                | max-shared  | (integer) 0..999999                                    | The maximum number of shared mailboxes
-|                | multiserver | (boolean)                                              | Multi server allowed
-|                | multitenant | (boolean)                                              | Multi tenant allowed
-|                | archiver    | (boolean)                                              | Archiver allowed
-|                | payperuse   | (boolean)                                              | Pay per use defines whether the installation is a 'hosted' installation, invoiced based on actual usage
-|                | plugins     | ([]string) list of plugins allowed in webapp           | A list of plugins which are allowed in WebApp (only applicable for 'paid' plugins, currently Files, Meet, S/MIME)
-| **meet**       |             |                                                        |
-|                | max-users   | (integer) 0..999999                                    | The maximum number of users with a Meet account
-|                | max-groups  | (integer) 0..999999                                    | The maximum number of simultaneous group meetings
-|                | guests      | (boolean)                                              | Are guest users allowed in this Meet instance
-|                | sfu         | (boolean)                                              | Is usage of the SFU allowed in this Meet instance
-|                | webinars    | (boolean)                                              | Is usage of the webinar feature allowed in this Meet instance
-|                | turnaccess  | (boolean)                                              | Can this subscription be used with the Kopano TURN server? 
-
-Plugins allowed in 'plugins' section of groupware claim:
-
-* **files** - Files plugin
-* **smime** - S/MIME plugin
-* **mdm** - Mobile Device Management plugin
-* **meet** - Meet plugin
+| Product name     | Claim       | Accepted values                                        | Description of purpose
+| ---------------- | ----------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------
+| **groupware**    |             |                                                        |
+|                  | edition     | (string) basic, professional, enterprise               | The purchased groupware edition (Basic, Professional or Enterprise)
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of active users (users who can log in)
+|                  | max-shared  | (integer) 0..999999                                    | The maximum number of shared mailboxes
+|                  | multiserver | (boolean)                                              | Multi server allowed
+|                  | multitenant | (boolean)                                              | Multi tenant allowed
+|                  | payperuse   | (boolean)                                              | Pay per use defines whether the installation is a 'hosted' installation, invoiced based on actual usage
+| **meet**         |             |                                                        |
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of users with a Meet account
+|                  | max-groups  | (integer) 0..999999                                    | The maximum number of simultaneous group meetings
+|                  | guests      | (boolean)                                              | Are guest users allowed in this Meet instance
+|                  | sfu         | (boolean)                                              | Is usage of the SFU allowed in this Meet instance
+|                  | webinars    | (boolean)                                              | Is usage of the webinar feature allowed in this Meet instance
+|                  | turnaccess  | (boolean)                                              | Can this subscription be used with the Kopano TURN server?
+| **archiver**     |             |                                                        |
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of users that can use the archiver
+| **webapp-meet**  |             |                                                        |
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of users allowed to use with the meet integration plugin
+| **webapp-files** |             |                                                        |
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of users allowed to use with the files plugin
+| **webapp-smime** |             |                                                        |
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of users allowed to use with the smime plugin
+| **webapp-mdm**   |             |                                                        |
+|                  | max-users   | (integer) 0..999999                                    | The maximum number of users allowed to use with the mdm plugin
