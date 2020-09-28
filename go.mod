@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/coreos/go-systemd/v22 v22.1.0
+	github.com/google/go-cmp v0.3.0
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect

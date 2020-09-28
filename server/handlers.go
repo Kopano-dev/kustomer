@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/longsleep/sse"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/square/go-jose.v2/jwt"
@@ -259,8 +261,10 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 					entry.Claims[k] = nextValue
 					continue
 				} else {
-					switch tNextValue := nextValue.(type) {
-					case int64:
+					v := reflect.ValueOf(nextValue)
+					switch v.Kind() {
+					case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						tNextValue := v.Int()
 						tHaveValue, good := haveValue.(int64)
 						if good {
 							entry.Claims[k] = tHaveValue + tNextValue
@@ -268,7 +272,8 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 							logger.Debugf("int64 type mismatch in claim %s, using newest", k)
 							entry.Claims[k] = tNextValue
 						}
-					case float64:
+					case reflect.Float32, reflect.Float64:
+						tNextValue := v.Float()
 						tHaveValue, good := haveValue.(float64)
 						if good {
 							entry.Claims[k] = tHaveValue + tNextValue
@@ -277,21 +282,30 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 							entry.Claims[k] = tNextValue
 
 						}
-					case []string:
-						tHaveValue, good := haveValue.([]string)
-						if good {
+					case reflect.Slice:
+						tNextValue, ok := nextValue.([]interface{})
+						if tHaveValue, good := haveValue.([]interface{}); ok && good {
+							cache := make(map[interface{}]bool)
+							for _, v := range tHaveValue {
+								cache[v] = true
+							}
 							for _, v := range tNextValue {
-								tHaveValue = appendIfMissingS(tHaveValue, v)
+								if !cache[v] {
+									tHaveValue = append(tHaveValue, v)
+								}
 							}
 							entry.Claims[k] = tHaveValue
 						} else {
-							logger.Debugf("[]string type mismatch in claim %s, using newest", k)
-							entry.Claims[k] = tNextValue
+							ok = false
+						}
+						if !ok {
+							logger.Debugf("[] type mismatch in claim %s, using newest", k)
+							entry.Claims[k] = nextValue
 						}
 					default:
 						// All other types must match, otherwise a warning will
 						// be logged, and newest is used.
-						if nextValue != haveValue {
+						if !cmp.Equal(nextValue, haveValue) {
 							logger.Debugf("mismatch in claim value %s, using newest", k)
 							entry.Claims[k] = nextValue
 						}
