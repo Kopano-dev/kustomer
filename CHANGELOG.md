@@ -4,7 +4,15 @@
 
 
 
-## v0.4.0 (2020-07-24)
+## v0.4.1 (2020-09-29)
+
+- Add exclusive indicator for product license claims
+- Update Jenkins reporting plugin from checkstyle to recordIssuesg
+- Fix slice claim aggregation
+- Add plugins
+
+
+## v0.4.0 (2020-07-27)
 
 - Describe purpose of fields in product claims
 - Add support for exclusive claims
