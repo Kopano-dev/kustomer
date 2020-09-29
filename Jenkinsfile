@@ -17,14 +17,12 @@ pipeline {
 			steps {
 				echo 'Linting..'
 				sh 'make lint-checkstyle'
-				checkstyle pattern: 'test/tests.lint.xml', canComputeNew: false, unstableTotalHigh: '100'
 			}
 		}
 		stage('Test') {
 			steps {
 				echo 'Testing..'
 				sh 'make test-xml-short'
-				junit allowEmptyResults: true, testResults: 'test/tests.xml'
 			}
 		}
 		stage('Vendor') {
@@ -51,6 +49,10 @@ pipeline {
 	}
 	post {
 		always {
+			junit allowEmptyResults: true, testResults: 'test/tests.xml'
+
+			recordIssues enabledForFailure: true, qualityGates: [[threshold: 100, type: 'TOTAL', unstable: true]], tools: [checkStyle(id: 'golint', name: 'Golint', pattern: 'test/tests.lint.xml')]
+
 			archiveArtifacts 'dist/*.tar.gz'
 			cleanWs()
 		}
