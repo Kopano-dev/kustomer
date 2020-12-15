@@ -137,6 +137,7 @@ The following products and product-specific fields/claims are valid for use in t
 |                  | multiserver | (boolean)                                              | Yes        | Multi server allowed
 |                  | multitenant | (boolean)                                              | Yes        | Multi tenant allowed
 |                  | payperuse   | (boolean)                                              | Yes        | Pay per use defines whether the installation is a 'hosted' installation, invoiced based on actual usage
+|                  | archiver    | (boolean)                                              | Yes        | Archiver allowed
 | **meet**         |             |                                                        |            |
 |                  | edition     | (string) starter, enterprise                           |            | The purchased Meet edition (Starter or Enterprise)
 |                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users with a Meet account
@@ -145,8 +146,6 @@ The following products and product-specific fields/claims are valid for use in t
 |                  | sfu         | (boolean)                                              | Yes        | Is usage of the SFU allowed in this Meet instance
 |                  | webinars    | (boolean)                                              | Yes        | Is usage of the webinar feature allowed in this Meet instance
 |                  | turnaccess  | (boolean)                                              | Yes        | Can this subscription be used with the Kopano TURN server?
-| **archiver**     |             |                                                        |            |
-|                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users that can use the archiver
 | **webapp-meet**  |             |                                                        |            |
 |                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users allowed to use with the meet integration plugin
 | **webapp-files** |             |                                                        |            |
