@@ -154,3 +154,22 @@ The following products and product-specific fields/claims are valid for use in t
 |                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users allowed to use with the smime plugin
 | **webapp-mdm**   |             |                                                        |            |
 |                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users allowed to use with the mdm plugin
+
+### Kopano product license checks
+
+The license claims are checked by supported builds of the corresponding Kopano
+software.
+
+#### Kopano Meet (**meet**)
+
+Meet licenses are validated by kwmserver. On startup and on any change of the
+active license set, kwmserver checks the `max-groups`, `guests`, `sfu`,
+`turnaccess` **meet** claims of the active license set with the current usage.
+If the current usage is not covered, a warning is logged (no functionality is
+limited).
+
+The license status is also made available to connected clients. Meet is
+displaying a snack to all connected users (including guests) if the current
+usage is not covered by the active license set.
+
+The **meet** claims `max-users` and `webinars` are currently ignored.
