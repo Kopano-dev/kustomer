@@ -160,6 +160,34 @@ The following products and product-specific fields/claims are valid for use in t
 The license claims are checked by supported builds of the corresponding Kopano
 software.
 
+### Kopano Groupware (**groupware**)
+
+Groupware licenses are validated by kopano-server and kopano-webapp.
+
+Kopano-server uses the `max-users` claim to limit the number of active users.
+A warning if an operation has failed because of these limits is logged. Also the
+claims `multiserver` and `multitenant` are checked and if they are active in the
+configuration but not covered by the active license claim set, the
+kopano-server's license status is reported accordingly.
+
+Without the `archiver` claim in the active claim set, connections to the server
+from kopano-archiver are not possible and are rejected.
+
+Whenever the active license claim set changes, kopano-server logs the new
+**groupware** claims.
+
+If the current usage is not covered by the active license claim set, the server
+status is also made available to MAPI clients.
+
+Kopano-webapp shows a warning to all connected users if the server status is not
+zero. Furthermore, If the active license claim has the `payperuse` claim set to
+true, kopano-webapp still defers to the license status reported by kopano-server.
+If `payperuse` is not set, kopano-webapp requires a **groupware** license in the
+active claim set in addition to the other checks to avoid the warning to appear
+to users.
+
+The **groupware** claim `max-shared` is currently ignored.
+
 #### Kopano Meet (**meet**)
 
 Meet licenses are validated by kwmserver. On startup and on any change of the
