@@ -168,7 +168,7 @@ Kopano-server uses the `max-users` claim to limit the number of active users.
 A warning if an operation has failed because of these limits is logged. Also the
 claims `multiserver` and `multitenant` are checked and if they are active in the
 configuration but not covered by the active license claim set, the
-kopano-server's license status is reported accordingly.
+kopano-server's license status is reported as non-zero.
 
 Without the `archiver` claim in the active claim set, connections to the server
 from kopano-archiver are not possible and are rejected.
@@ -177,14 +177,15 @@ Whenever the active license claim set changes, kopano-server logs the new
 **groupware** claims.
 
 If the current usage is not covered by the active license claim set, the server
-status is also made available to MAPI clients.
+status is also made available to MAPI clients as non-zero value if the server's
+license is not valid or overused.
 
-Kopano-webapp shows a warning to all connected users if the server status is not
-zero. Furthermore, If the active license claim has the `payperuse` claim set to
-true, kopano-webapp still defers to the license status reported by kopano-server.
-If `payperuse` is not set, kopano-webapp requires a **groupware** license in the
-active claim set in addition to the other checks to avoid the warning to appear
-to users.
+Kopano-webapp shows a warning to all connected users if it cannot find a
+**groupware** license in its active license claim set or if server reported
+status is non-zero.
+
+If the active license claim has the `payperuse` claim set to true, the warning
+message normally displayed by kopano-webapp is not shown.
 
 The **groupware** claim `max-shared` is currently ignored.
 
