@@ -9,10 +9,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -33,6 +33,7 @@ import (
 	"gopkg.in/square/go-jose.v2/jwt"
 	"stash.kopano.io/kgol/ksurveyclient-go/autosurvey"
 
+	"stash.kopano.io/kgol/kustomer"
 	"stash.kopano.io/kgol/kustomer/license"
 	"stash.kopano.io/kgol/kustomer/version"
 )
@@ -47,6 +48,8 @@ const (
 	defaultHTTPIdleConnTimeout       = 5 * time.Second
 	defaultHTTPTLSHandshakeTimeout   = 10 * time.Second
 	defaultHTTPExpectContinueTimeout = 1 * time.Second
+
+	offlineThreshold uint = 3
 )
 
 var DefaultHTTPUserAgent = "kustomerd/" + version.Version
@@ -64,9 +67,11 @@ type Server struct {
 
 	insecure bool
 	trusted  bool
-	offline  bool
 
-	jwksURI  *url.URL
+	offline          uint
+	offlineThreshold uint
+
+	jwksURIs []*url.URL
 	jwks     *jose.JSONWebKeySet
 	certPool *x509.CertPool
 
@@ -87,9 +92,11 @@ func NewServer(c *Config) (*Server, error) {
 
 		insecure: c.Insecure,
 		trusted:  c.Trusted,
-		offline:  true,
 
-		jwksURI:  c.JWKSURI,
+		offline:          offlineThreshold,
+		offlineThreshold: offlineThreshold,
+
+		jwksURIs: c.JWKSURIs,
 		certPool: c.CertPool,
 
 		readyCh:  make(chan struct{}),
@@ -251,81 +258,55 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	// Load JWKS if we have one.
 	go func() {
-		if s.jwksURI == nil {
-			logger.Warnln("no JWKS URI is set, running in offline mode")
+		if len(s.jwksURIs) == 0 {
+			logger.Warnln("no JWKS URIs are set, running in offline mode")
 			close(readyCh)
 			return
 		}
+
 		var started bool
-		var etag string
-		var offline = true
-		requester := func() (*jose.JSONWebKeySet, error) {
-			requestCtx, cancel := context.WithTimeout(serveCtx, 30*time.Second)
-			defer cancel()
-			request, requestErr := http.NewRequestWithContext(requestCtx, http.MethodGet, s.jwksURI.String(), nil)
-			if requestErr != nil {
-				return nil, requestErr
-			}
-			request.Header.Set("User-Agent", DefaultHTTPUserAgent)
-			if etag != "" {
-				request.Header.Set("If-None-Match", etag)
-			}
+		var offline uint
+		loggerWriter := logger.WithFields(nil).WriterLevel(logrus.ErrorLevel)
+		defer loggerWriter.Close()
+		fetcher := kustomer.JWKSFetcher{
+			URIs:      s.jwksURIs,
+			UserAgent: DefaultHTTPUserAgent,
 
-			attempt := 1
-			for {
-				response, responseErr := s.httpClient.Do(request)
-				if responseErr == nil {
-					offline = false
-					switch response.StatusCode {
-					case http.StatusNotModified:
-						// Nothing changed. Done for now.
-						return nil, nil
-					case http.StatusOK:
-						etag = response.Header.Get("ETag")
-						decoder := json.NewDecoder(response.Body)
-						jwks := &jose.JSONWebKeySet{}
-						decodeErr := decoder.Decode(jwks)
-						response.Body.Close()
-						if decodeErr == nil {
-							logger.WithField("keys", len(jwks.Keys)).Debugln("JWKS loaded successfully")
-							return jwks, nil
-						} else {
-							logger.WithError(decodeErr).Errorln("failed to parse JWKS")
-						}
-					default:
-						logger.Errorln("unexpected response status when fetching JWKS: %d", response.StatusCode)
-					}
-				}
-				offline = true
-				if attempt >= 3 {
-					return nil, responseErr
-				}
-				logger.WithError(responseErr).Debugln("error while fetching JWKS from URI (will retry)")
-				select {
-				case <-serveCtx.Done():
-					return nil, nil
-				case <-time.After(time.Duration(attempt) * 5 * time.Second):
-					attempt++
-				}
-			}
+			Client:   s.httpClient,
+			ErrorLog: log.New(loggerWriter, "", 0),
+
+			MaxRetries: 3,
 		}
-
 		for {
-			jwks, requestErr := requester()
+			jwks, requestErr := fetcher.Update(serveCtx)
 			s.mutex.Lock()
 			if requestErr != nil {
 				logger.WithError(requestErr).Warnln("unable to fetch JWKS")
 			} else if jwks != nil {
+				logger.WithField("keys", len(jwks.Keys)).Debugln("JWKS loaded successfully")
 				s.jwks = jwks
 				if started {
 					triggerCh <- true
 				}
 			}
+			offline = s.offline
+			if o := fetcher.Offline(); o {
+				offline++
+				if offline > s.offlineThreshold {
+					offline = s.offlineThreshold
+				}
+			} else {
+				offline = 0
+			}
 			if s.offline != offline {
 				s.offline = offline
 				if started {
-					if offline {
-						logger.Warnln("now offline")
+					if offline > 0 {
+						if offline > s.offlineThreshold {
+							logger.Warnln("now offline")
+						} else {
+							logger.Debugln("now offline (threshold not reached yet)")
+						}
 					} else {
 						logger.Warnln("no longer offline")
 					}
@@ -335,7 +316,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			if !started {
 				close(readyCh)
 				started = true
-				if offline {
+				if offline > 0 {
 					logger.Warnln("started in offline mode, no JWKS is loaded")
 				}
 			}
@@ -408,7 +389,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		var lastSub string
 		var first bool = true
 		var jwks *jose.JSONWebKeySet
-		var offline bool
+		var offline uint
 		f := func() {
 			s.mutex.RLock()
 			if jwks != s.jwks {
@@ -479,7 +460,7 @@ func (s *Server) Serve(ctx context.Context) error {
 											key = &keys[0]
 										}
 										if key == nil {
-											if !offline {
+											if offline > 0 {
 												if log {
 													logger.WithFields(logrus.Fields{
 														"kid":  headers.KeyID,

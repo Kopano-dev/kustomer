@@ -38,7 +38,7 @@ TIMEOUT  = 30
 
 # Defaults
 
-LICENSE_JWKS_URI ?= https://kustomer.kopano.com/api/stats/v1/jwks.json
+LICENSE_JWKS_URI ?= https://kustomer.kopano.com/api/stats/v1/jwks.json,https://kustomer-cdn-a.kopano.com/api/stats/v1/jwks.json,https://kustomer-cdn-b.kopano.io/api/stats/v1/jwks.json
 LICENSE_TRUSTED_CERTS_FILE ?= license-trusted-certs.pem
 LICENSE_TRUSTED_CERTS_URL ?= https://stash.kopano.io/projects/KLE/repos/pub-keys/raw/root-ca.crt?at=refs%2Ftags%2Fv1.0.0
 

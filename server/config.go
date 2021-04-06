@@ -22,7 +22,7 @@ type Config struct {
 	Insecure bool
 
 	Trusted  bool
-	JWKSURI  *url.URL
+	JWKSURIs []*url.URL
 	CertPool *x509.CertPool
 
 	Logger logrus.FieldLogger

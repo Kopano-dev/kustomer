@@ -180,11 +180,12 @@ func (s *Server) ClaimsKopanoProductsHandler(rw http.ResponseWriter, req *http.R
 	claims := s.claims
 	trusted := s.trusted
 	offline := s.offline
+	offlineThreshold := s.offlineThreshold
 	s.mutex.RUnlock()
 
 	response := &api.ClaimsKopanoProductsResponse{
 		Trusted:  trusted,
-		Offline:  offline,
+		Offline:  offline >= offlineThreshold,
 		Products: make(map[string]*api.ClaimsKopanoProductsResponseProduct),
 	}
 	products := response.Products

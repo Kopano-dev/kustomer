@@ -10,10 +10,12 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	systemDaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spf13/cobra"
@@ -63,6 +65,8 @@ func init() {
 	if v := os.Getenv("KOPANO_KUSTOMERD_LICENSE_SUB"); v != "" {
 		globalSub = strings.TrimSpace(v)
 	}
+
+	rand.Seed(time.Now().UnixNano())
 }
 
 func commandServe() *cobra.Command {
@@ -119,16 +123,32 @@ func serve(cmd *cobra.Command, args []string) error {
 		trusted = false
 	}
 
-	var jwksURI *url.URL
+	jwksURIs := make([]*url.URL, 0)
 	if server.DefaultLicenseJWKSURI != "" {
-		jwksURI, err = url.Parse(server.DefaultLicenseJWKSURI)
-		if err != nil {
-			return fmt.Errorf("failed to parse JWKS URI: %w", err)
+		jwksURIsExtra := make([]*url.URL, 0)
+		for idx, jwksURIString := range strings.Split(server.DefaultLicenseJWKSURI, ",") {
+			if jwksURI, parseErr := url.Parse(jwksURIString); parseErr != nil {
+				return fmt.Errorf("failed to parse JWKS URI: %w", parseErr)
+			} else {
+				if idx == 0 {
+					// Always go to main URI first.
+					jwksURIs = append(jwksURIs, jwksURI)
+				} else {
+					jwksURIsExtra = append(jwksURIsExtra, jwksURI)
+				}
+			}
 		}
-		logger.WithField("jwks_uri", jwksURI.String()).Infoln("JWKS URI available")
+		if len(jwksURIsExtra) > 0 {
+			// Randomize backup URI order.
+			rand.Shuffle(len(jwksURIsExtra), func(i, j int) {
+				jwksURIsExtra[i], jwksURIsExtra[j] = jwksURIsExtra[j], jwksURIsExtra[i]
+			})
+			jwksURIs = append(jwksURIs, jwksURIsExtra...)
+		}
+		logger.WithField("jwks_uris", jwksURIs).Infoln("JWKS URIs available")
 	} else {
 		trusted = false
-		logger.Warnln("no JWKS URI set, this is odd - development build?")
+		logger.Warnln("no JWKS URIs set, this is odd - development build?")
 	}
 
 	if !trusted {
@@ -144,7 +164,7 @@ func serve(cmd *cobra.Command, args []string) error {
 		Insecure: defaultInsecure,
 
 		Trusted:  trusted,
-		JWKSURI:  jwksURI,
+		JWKSURIs: jwksURIs,
 		CertPool: certPool,
 
 		Logger: logger,
