@@ -13,6 +13,7 @@ import (
 	"gopkg.in/square/go-jose.v2/jwt"
 	"stash.kopano.io/kgol/ksurveyclient-go"
 
+	"stash.kopano.io/kgol/kustomer"
 	"stash.kopano.io/kgol/kustomer/license"
 )
 
@@ -53,7 +54,7 @@ func (c *Collector) Collect(ch chan<- ksurveyclient.Metric) {
 			sub = hashSub(sub)
 		}
 		licenseCustomer = appendIfMissing(licenseCustomer, sub)
-		if validateErr := claim.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
+		if validateErr := claim.ValidateWithLeeway(expected, kustomer.DefaultLicenseLeeway); validateErr != nil {
 			c.logger.WithField("name", claim.LicenseFileName).WithError(validateErr).Warnln("license is not valid")
 			continue
 		}

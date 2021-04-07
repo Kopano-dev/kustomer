@@ -1,14 +1,19 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright 2019 Kopano and its licensors
+ */
+
 package kustomer
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/square/go-jose.v2"
 )
 
@@ -17,8 +22,8 @@ type JWKSFetcher struct {
 	URIs      []*url.URL
 	UserAgent string
 
-	Client   *http.Client
-	ErrorLog *log.Logger
+	Client *http.Client
+	Logger logrus.FieldLogger
 
 	MaxRetries int
 
@@ -29,6 +34,11 @@ type JWKSFetcher struct {
 
 // Update fetches the JWKS from its URI with retry.
 func (jwksf *JWKSFetcher) Update(ctx context.Context) (*jose.JSONWebKeySet, error) {
+	logger := jwksf.Logger
+	if logger == nil {
+		logger = logrus.StandardLogger()
+	}
+
 	var attempt int = 1
 	var uriIndex int
 	for {
@@ -67,6 +77,7 @@ func (jwksf *JWKSFetcher) Update(ctx context.Context) (*jose.JSONWebKeySet, erro
 				decodeErr := decoder.Decode(jwks)
 				response.Body.Close()
 				if decodeErr == nil {
+					logger.WithField("keys", len(jwks.Keys)).Debugln("JWKS loaded successfully")
 					return jwks, etag, nil
 				} else {
 					return nil, etag, fmt.Errorf("failed to parse JWKS from %s: %w", jwksf.URIs[uriIndex], decodeErr)
@@ -86,10 +97,10 @@ func (jwksf *JWKSFetcher) Update(ctx context.Context) (*jose.JSONWebKeySet, erro
 
 		jwksf.offline = true
 		if attempt >= jwksf.MaxRetries {
-			jwksf.logf("kustomer: failed to fetching JWKS from URI: %v", err)
+			logger.WithError(err).Errorln("failed to fetch JWKS from URI")
 			return nil, err
 		}
-		jwksf.logf("kustomer: error while fetching JWKS from URI (will retry): %v", err)
+		logger.WithError(err).Infoln("error while fetching JWKS from URI (will retry)")
 		select {
 		case <-ctx.Done():
 			return nil, nil
@@ -109,12 +120,4 @@ func (jwksf *JWKSFetcher) JWKS() *jose.JSONWebKeySet {
 
 func (jwksf *JWKSFetcher) ETag() string {
 	return jwksf.etag
-}
-
-func (jwksf *JWKSFetcher) logf(format string, args ...interface{}) {
-	if jwksf.ErrorLog != nil {
-		jwksf.ErrorLog.Printf(format, args...)
-	} else {
-		log.Printf(format, args...)
-	}
 }

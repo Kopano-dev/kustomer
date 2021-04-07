@@ -57,6 +57,7 @@ type Claims struct {
 
 	LicenseFileName string `json:"-"`
 	LicenseID       string `json:"-"`
+	Raw             []byte `json:"-"`
 
 	LicenseFileID               string `json:"uid"`
 	DisplayName                 string `json:"dn"`

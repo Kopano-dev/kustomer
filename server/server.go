@@ -10,16 +10,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,9 +35,6 @@ import (
 )
 
 const (
-	licenseSizeLimitBytes = 1024 * 1024
-	licenseLeeway         = 24 * time.Hour
-
 	defaultHTTPTimeout               = 30 * time.Second
 	defaultHTTPKeepAlive             = 30 * time.Second
 	defaultHTTPMaxIdleConns          = 5
@@ -266,14 +259,12 @@ func (s *Server) Serve(ctx context.Context) error {
 
 		var started bool
 		var offline uint
-		loggerWriter := logger.WithFields(nil).WriterLevel(logrus.ErrorLevel)
-		defer loggerWriter.Close()
 		fetcher := kustomer.JWKSFetcher{
 			URIs:      s.jwksURIs,
 			UserAgent: DefaultHTTPUserAgent,
 
-			Client:   s.httpClient,
-			ErrorLog: log.New(loggerWriter, "", 0),
+			Client: s.httpClient,
+			Logger: logger,
 
 			MaxRetries: 3,
 		}
@@ -384,235 +375,71 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	// License loading / watching.
 	go func() {
-		loadHistory := make(map[string]bool)
-		activateHistory := make(map[string]bool)
+		loadHistory := make(map[string]*license.Claims)
+		activateHistory := make(map[string]*license.Claims)
 		var lastSub string
 		var first bool = true
 		var jwks *jose.JSONWebKeySet
-		var offline uint
+		var offline bool
 		f := func() {
 			s.mutex.RLock()
 			if jwks != s.jwks {
 				jwks = s.jwks
-				loadHistory = make(map[string]bool)
+				loadHistory = make(map[string]*license.Claims)
 			}
-			offline = s.offline
+			offline = s.offline > 0
 			s.mutex.RUnlock()
+
 			var sub string
-			claims := make([]*license.Claims, 0)
+			var claims []*license.Claims
+			var changed bool
 			// Load and parse license files.
 			if s.licensePath != "" {
-				expected := jwt.Expected{
-					Time: time.Now(),
-				}
-				if files, readDirErr := ioutil.ReadDir(s.licensePath); readDirErr == nil {
-					for _, info := range files {
-						if info.IsDir() {
-							continue
-						}
-						fn := filepath.Join(s.licensePath, info.Name())
-						if f, openErr := os.Open(fn); openErr == nil {
-							log := true
-							c := license.Claims{
-								LicenseID:       fn,
-								LicenseFileName: fn,
-							}
-							if _, ok := loadHistory[c.LicenseID]; ok {
-								log = false
-							}
-							func() {
-								r := io.LimitReader(f, licenseSizeLimitBytes)
-								if raw, readErr := ioutil.ReadAll(r); readErr == nil {
-									if token, parseErr := jwt.ParseSigned(string(raw)); parseErr == nil {
-										if len(token.Headers) != 1 {
-											if log {
-												logger.WithField("name", fn).Warnln("license with multiple headers, ignored")
-											}
-											return
-										}
-										headers := token.Headers[0]
-										switch jose.SignatureAlgorithm(headers.Algorithm) {
-										case jose.EdDSA:
-										case jose.ES256:
-										case jose.ES384:
-										case jose.ES512:
-										default:
-											if log {
-												logger.WithFields(logrus.Fields{
-													"alg":  headers.Algorithm,
-													"name": fn,
-												}).Warnln("license with unknown alg, ignored")
-											}
-											return
-										}
-										var key interface{}
-										if jwks != nil {
-											keys := jwks.Key(headers.KeyID)
-											if len(keys) == 0 {
-												if log {
-													logger.WithFields(logrus.Fields{
-														"kid":  headers.KeyID,
-														"name": fn,
-													}).Warnln("license with unknown kid, ignored")
-												}
-												return
-											}
-											key = &keys[0]
-										}
-										if key == nil {
-											if offline > 0 {
-												if log {
-													logger.WithFields(logrus.Fields{
-														"kid":  headers.KeyID,
-														"name": fn,
-													}).Warnln("license found but there is no matching online key, skipped")
-												}
-												return
-											}
-											if s.certPool != nil {
-												// If we have a certificate pool, try to validate the license with it
-												// in offline mode.
-												chain, certsErr := headers.Certificates(x509.VerifyOptions{
-													Roots: s.certPool,
-												})
-												if certsErr != nil {
-													if log {
-														logger.WithError(certsErr).WithFields(logrus.Fields{
-															"kid":  headers.KeyID,
-															"name": fn,
-														}).Warnln("license certificate check failed, skipped")
-													}
-													return
-												}
-												if len(chain) > 0 && len(chain[0]) > 0 {
-													// Extract public key from chain.
-													cert := chain[0][0]
-													key = cert.PublicKey
-												}
-											}
-											if key == nil {
-												if log {
-													logger.WithFields(logrus.Fields{
-														"kid":  headers.KeyID,
-														"name": fn,
-													}).Warnln("license found but there is no matching offline key, skipped")
-												}
-												return
-											}
-										}
-										if claimsErr := token.Claims(key, &c); claimsErr == nil {
-											if c.Claims.ID != "" {
-												c.LicenseID = c.Claims.ID
-											}
-											if _, ok := loadHistory[c.LicenseID]; ok {
-												log = false
-											}
-											if validateErr := c.Claims.ValidateWithLeeway(expected, licenseLeeway); validateErr != nil {
-												if log {
-													logger.WithError(validateErr).WithField("name", fn).Warnln("license is not valid, skipped")
-												}
-												return
-											} else {
-												subject := strings.TrimSpace(c.Claims.Subject)
-												if subject == "" {
-													if log {
-														logger.WithFields(logrus.Fields{
-															"kid":  headers.KeyID,
-															"name": fn,
-														}).Warnln("license found but it's sub claim is empty, skipped")
-													}
-													return
-												}
-												claims = append(claims, &c)
-												if log {
-													logger.WithField("name", fn).Debugln("license is valid, loaded")
-												}
-												return
-											}
-										} else {
-											if log {
-												logger.WithError(claimsErr).WithField("name", fn).Errorln("error while parsing license file claims")
-											}
-										}
-									} else {
-										if log {
-											logger.WithError(parseErr).WithField("name", fn).Errorln("error while parsing license file")
-										}
-									}
-								} else {
-									logger.WithError(readErr).WithField("name", fn).Errorln("error while reading license file")
-								}
-							}()
-							f.Close()
-							if log {
-								loadHistory[c.LicenseID] = true
-							}
-						} else {
-							logger.WithError(openErr).WithField("name", fn).Errorln("failed to read license file")
-						}
-					}
-				} else {
-					logger.WithError(readDirErr).Errorln("failed to read license folder")
-				}
-			}
-			// Sort reverse to prepare for uid deduplication (newer shall win).
-			sort.SliceStable(claims, func(i int, j int) bool {
-				return claims[i].Claims.IssuedAt.Time().After(claims[j].Claims.IssuedAt.Time())
-			})
-			// Deduplicate uid, sorted from newer to older, means everything
-			// which was seen already can be removed.
-			added := make(map[string]bool)
-			claims = func(claims []*license.Claims) []*license.Claims {
-				result := make([]*license.Claims, 0)
-				seen := make(map[string]bool)
-				for _, c := range claims {
-					log := true
-					if _, ok := activateHistory[c.LicenseID]; ok {
-						added[c.LicenseID] = false
-						log = false
-					} else {
-						added[c.LicenseID] = true
-						activateHistory[c.LicenseID] = true
-					}
-					if !seen[c.LicenseFileID] {
-						if c.LicenseFileID != "" {
-							seen[c.LicenseFileID] = true
-						}
-						// Prepend to also reverse.
-						result = append([]*license.Claims{c}, result...)
+				scanner := &kustomer.LicensesLoader{
+					CertPool: s.certPool,
+
+					JWKS:    jwks,
+					Offline: offline,
+
+					Logger: logger,
+
+					LoadHistory:     loadHistory,
+					ActivateHistory: activateHistory,
+
+					OnActivate: func(c *license.Claims) {
 						products := []string{}
 						for k := range c.Kopano.Products {
 							products = append(products, k)
 						}
-						if log {
-							logger.WithFields(logrus.Fields{
-								"name":     c.LicenseFileName,
-								"products": products,
-								"id":       c.Claims.ID,
-							}).Infoln("licensed products activated")
-						}
-					} else {
-						if log {
-							logger.WithField("name", c.LicenseFileName).Infoln("skipped")
-						}
-					}
+						logger.WithFields(logrus.Fields{
+							"name":     c.LicenseFileName,
+							"products": products,
+							"id":       c.Claims.ID,
+							"customer": c.Claims.Subject,
+						}).Infoln("licensed products activated")
+
+					},
+					OnRemove: func(c *license.Claims) {
+						logger.WithField("id", c.LicenseID).Debugln("removed, triggering")
+						changed = true
+					},
+					OnNew: func(c *license.Claims) {
+						logger.WithField("id", c.LicenseID).Debugln("new, triggering")
+						changed = true
+					},
+					OnSkip: func(c *license.Claims) {
+						logger.WithField("name", c.LicenseFileName).Infoln("skipped")
+					},
 				}
-				return result
-			}(claims)
-			changed := false
-			for k := range activateHistory {
-				if _, ok := added[k]; !ok {
-					delete(activateHistory, k)
-					logger.WithField("id", k).Debugln("removed, triggering")
-					changed = true
+				var scanErr error
+				claims, scanErr = scanner.ScanFolder(s.licensePath, jwt.Expected{
+					Time: time.Now(),
+				})
+				if scanErr != nil {
+					logger.WithError(scanErr).Errorln("failed to scan for licenses")
 				}
 			}
-			for k, v := range added {
-				if v {
-					logger.WithField("id", k).Debugln("new, triggering")
-					changed = true
-				}
-			}
+
 			// Add global configured sub to beginning.
 			if s.sub != "" {
 				if changed {
@@ -624,6 +451,7 @@ func (s *Server) Serve(ctx context.Context) error {
 					},
 				}}, claims...)
 			}
+
 			// Find sub.
 			if len(claims) > 0 {
 				sub = claims[0].Claims.Subject
@@ -632,11 +460,14 @@ func (s *Server) Serve(ctx context.Context) error {
 				return
 			}
 			lastSub = sub
+
+			// Update active claims.
 			s.mutex.Lock()
 			s.claims = claims
 			updateCh := s.updateCh
 			s.updateCh = make(chan struct{})
 			s.mutex.Unlock()
+
 			if first {
 				close(s.readyCh)
 				first = false
