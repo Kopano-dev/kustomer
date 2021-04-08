@@ -6,6 +6,7 @@
 package kustomer
 
 import (
+	"bytes"
 	"crypto/x509"
 	"io"
 	"io/ioutil"
@@ -81,8 +82,8 @@ func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected)
 				func() {
 					r := io.LimitReader(f, licenseSizeLimitBytes)
 					if raw, readErr := ioutil.ReadAll(r); readErr == nil {
-						c.Raw = raw
-						if token, parseErr := jwt.ParseSigned(string(raw)); parseErr == nil {
+						c.Raw = bytes.TrimSpace(raw)
+						if token, parseErr := jwt.ParseSigned(string(c.Raw)); parseErr == nil {
 							if len(token.Headers) != 1 {
 								if isNew {
 									logger.WithField("name", fn).Warnln("license with multiple headers, ignored")
