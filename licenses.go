@@ -37,6 +37,7 @@ type LicensesLoader struct {
 
 	// JWKS is the key set for license validation when not offline.
 	JWKS *jose.JSONWebKeySet
+
 	// Offline allows license valdation with keys from CertPool if not found in JWKS.
 	Offline bool
 
@@ -54,9 +55,21 @@ type LicensesLoader struct {
 	OnSkip     func(*license.Claims)
 }
 
-// ScanFolder scans the provided folder for license files, loads and parses them
-// all and returns the claim set for each currently valid license.
+// ScanFolder scans the provided folder for license files, loads, parses and
+// validates them all and returns the claim set for each currently valid license.
 func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected) ([]*license.Claims, error) {
+	return ll.scanFolderForLicenseClaims(licensesPath, expected, false)
+}
+
+// UnsafeScanFolderWithoutVerification scans the provided folder for license
+// files, loads parses and skips validation if no matching key is found, making
+// this function unsafe to use when its required to only return valid license
+// claim sets.
+func (ll *LicensesLoader) UnsafeScanFolderWithoutVerification(licensesPath string, expected jwt.Expected) ([]*license.Claims, error) {
+	return ll.scanFolderForLicenseClaims(licensesPath, expected, true)
+}
+
+func (ll *LicensesLoader) scanFolderForLicenseClaims(licensesPath string, expected jwt.Expected, unsafe bool) ([]*license.Claims, error) {
 	logger := ll.Logger
 	if logger == nil {
 		logger = logrus.StandardLogger()
@@ -108,7 +121,7 @@ func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected)
 							var key interface{}
 							if ll.JWKS != nil {
 								keys := ll.JWKS.Key(headers.KeyID)
-								if len(keys) == 0 {
+								if len(keys) == 0 && !unsafe {
 									if isNew {
 										logger.WithFields(logrus.Fields{
 											"kid":  headers.KeyID,
@@ -116,11 +129,12 @@ func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected)
 										}).Warnln("license with unknown kid, ignored")
 									}
 									return
+								} else {
+									key = &keys[0]
 								}
-								key = &keys[0]
 							}
 							if key == nil {
-								if !ll.Offline {
+								if !ll.Offline && !unsafe {
 									if isNew {
 										logger.WithFields(logrus.Fields{
 											"kid":  headers.KeyID,
@@ -150,7 +164,7 @@ func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected)
 										key = cert.PublicKey
 									}
 								}
-								if key == nil {
+								if key == nil && !unsafe {
 									if isNew {
 										logger.WithFields(logrus.Fields{
 											"kid":  headers.KeyID,
@@ -160,7 +174,13 @@ func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected)
 									return
 								}
 							}
-							if claimsErr := token.Claims(key, &c); claimsErr == nil {
+							var claimsErr error
+							if unsafe && key == nil {
+								claimsErr = token.UnsafeClaimsWithoutVerification(&c)
+							} else {
+								claimsErr = token.Claims(key, &c)
+							}
+							if claimsErr == nil {
 								if c.Claims.ID != "" {
 									c.LicenseID = c.Claims.ID
 								}
