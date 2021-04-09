@@ -14,14 +14,21 @@
 # limitations under the License.
 #
 
-FROM alpine:3.12
+ARG ALPINE_VERSION=3.13.4
+
+FROM alpine:${ALPINE_VERSION}
 LABEL maintainer="development@kopano.io"
 
+ARG VERSION=latest
+ARG SU_EXEC_VERSION=0.2-r1
+ARG CA_CERTIFICATES_VERSION=20191127-r5
+ARG CURL_VERSION=7.74.0-r1
+
 RUN apk add --no-cache \
-        su-exec=0.2-r1
+	su-exec=${SU_EXEC_VERSION}
 
 # Version to include in this Docker image. Default to latest.
-ENV VERSION latest
+ENV VERSION ${VERSION}
 
 # Define basic environment variables.
 ENV EXE=kustomerd
@@ -46,8 +53,8 @@ SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 # Download
 RUN apk add --no-cache \
-		ca-certificates=20191127-r4 \
-		curl=7.69.1-r1 \
+		ca-certificates=${CA_CERTIFICATES_VERSION} \
+		curl=${CURL_VERSION} \
 	&& curl -sSL https://download.kopano.io/community/kustomer:/kopano-kustomer-${VERSION}.tar.gz | \
 	tar -C /var/lib/kustomerd-docker --strip 1 -vxzf - && \
 	mv ${EXE} /usr/local/bin/${EXE}
@@ -59,4 +66,4 @@ CMD [ \
 	]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-        CMD healthcheck.sh || exit 1
+	CMD healthcheck.sh || exit 1
