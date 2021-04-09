@@ -77,7 +77,6 @@ func (jwksf *JWKSFetcher) Update(ctx context.Context) (*jose.JSONWebKeySet, erro
 				decodeErr := decoder.Decode(jwks)
 				response.Body.Close()
 				if decodeErr == nil {
-					logger.WithField("keys", len(jwks.Keys)).Debugln("JWKS loaded successfully")
 					return jwks, etag, nil
 				} else {
 					return nil, etag, fmt.Errorf("failed to parse JWKS from %s: %w", jwksf.URIs[uriIndex], decodeErr)
