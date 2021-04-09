@@ -120,7 +120,7 @@ func (ll *LicensesLoader) ScanFolder(licensesPath string, expected jwt.Expected)
 								key = &keys[0]
 							}
 							if key == nil {
-								if ll.Offline {
+								if !ll.Offline {
 									if isNew {
 										logger.WithFields(logrus.Fields{
 											"kid":  headers.KeyID,
