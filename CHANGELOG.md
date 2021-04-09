@@ -4,6 +4,28 @@
 
 
 
+## v0.5.0 (2021-04-09)
+
+- Cleanup and add args for Dockerfile.release
+- Build with Go 1.16.3
+- Improve code error/exit behavior when loading license files
+- Avoid duplicated log output introduced while refactoring
+- Add test for Kopano license product claims
+- Expose a function to load license claims without key validation
+- Fix refactoring mistake for license check when offline
+- Trim white space from license files when loading
+- Refactor license folder loader to module
+- Improve robustness of kustomer key set loader
+- Fix groupware.payperuse claim validation specification
+- Define license checks for groupware
+- Define license checks for Meet
+- Use archiver claim as actually implemented
+- Fix table issue
+- Fix typo in edition
+- Add edition for meet licenses
+- Update Docker image to latest versions
+
+
 ## v0.4.1 (2020-09-29)
 
 - Add exclusive indicator for product license claims
