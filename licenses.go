@@ -203,24 +203,27 @@ func (ll *LicensesLoader) scanFolderForLicenseClaims(licensesPath string, expect
 										}
 										return
 									}
-									claims = append(claims, c)
-									if isNew {
-										logger.WithField("name", fn).Debugln("license is valid, loaded")
-									}
-									return
 								}
 							} else {
 								if isNew {
 									logger.WithError(claimsErr).WithField("name", fn).Errorln("error while parsing license file claims")
 								}
+								return
 							}
 						} else {
 							if isNew {
 								logger.WithError(parseErr).WithField("name", fn).Errorln("error while parsing license file")
 							}
+							return
 						}
 					} else {
 						logger.WithError(readErr).WithField("name", fn).Errorln("error while reading license file")
+						return
+					}
+					// If reached here, all is good, add claims to result.
+					claims = append(claims, c)
+					if isNew {
+						logger.WithField("name", fn).Debugln("license is valid, loaded")
 					}
 				}()
 				f.Close()
