@@ -154,6 +154,8 @@ The following products and product-specific fields/claims are valid for use in t
 |                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users allowed to use with the smime plugin
 | **webapp-mdm**   |             |                                                        |            |
 |                  | max-users   | (integer) 0..999999                                    |            | The maximum number of users allowed to use with the mdm plugin
+| **smtpst**       |             |                                                        |            |
+|                  | domains     | (string array)                                         |            | List of email domains
 
 ### Kopano product license checks
 
@@ -202,3 +204,23 @@ displaying a snack to all connected users (including guests) if the current
 usage is not covered by the active license set.
 
 The **meet** claims `max-users` and `webinars` are currently ignored.
+
+#### Kopano SMTP Secure Transport (**smtpst**)
+
+SMTPST licenses are validated by the SMTPST provider whenever the SMTPST client
+running on the customer system makes a new connection.
+
+The SMTPST provider periodically checks for active connections with expired
+licenses and terminates those connections after leeway period.
+
+If the license contains the `domains` claim, those domains are validated and
+connected to the client connecting for them. If the `domains` claim is not set,
+a random domain will be assigned automatically.
+
+Only one connection is allowed for the same domain at the same time. If the 
+total number of connections for a particular domain is reached, a older 
+connection is terminated automatically if a new connection for that domain is 
+received.
+
+Finally, also a **groupware** license, qualifies as **smtpst** license (without
+any further claims).
